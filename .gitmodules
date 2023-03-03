@@ -1,0 +1,3 @@
+[submodule "cincomancia"]
+	path = cincomancia
+	url = https://github.com/AurenSnyder/Cincomancia.git
