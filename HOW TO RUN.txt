@@ -1,6 +1,6 @@
  === INSTALL =============================
 
-1) unzip these files into the same directory as Cinco Paus.exe
+1) place these files into the same directory as Cinco Paus.exe
 2) cd into the same directory as Cinco Paus.exe
 3) python -m http.server
 4) navigate to http://localhost:8000/ in firefox (other browsers also likely work, but haven't been tested)
