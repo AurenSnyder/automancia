@@ -1,0 +1,2282 @@
+<!DOCTYPE html>
+<head>
+<meta charset="UTF-8">
+<title>untitled</title>
+
+<style>
+
+body, html {
+	margin: 0;
+	padding: 0;
+	height:100%;
+}
+
+canvas {
+	background: #383735;
+	position: fixed;
+}
+
+img {
+	display: none;
+	overflow: hidden;
+}
+
+iframe {
+	z-index: 50;
+	position: absolute;
+	margin-left: 20px;
+	margin-top: 280px;
+	object-fit: contain;
+	
+	/*zoom: 0.4;
+	-moz-transform: scale(0.4);
+	-moz-transform-origin: 0 0;
+	-o-transform: scale(0.4);
+	-o-transform-origin: 0 0;
+	-webkit-transform: scale(0.4);
+	-webkit-transform-origin: 0 0;*/
+	
+	width: 820px;
+	height: 400px;
+}
+
+</style>
+
+</head>
+<body>
+
+<canvas id="canvas" style='z-index: 30;'>
+Canvas not supported
+</canvas>
+
+<div style="z-index: 50; position: absolute; margin-left: 240px; margin-top: 180px; color: #ffffff">
+	<!--<input type="file" id="datafile" onchange="fileSelected(event)"><br>-->
+
+	<label for="rate" style="font: 14px Monospace;">update rate (ms):</label>
+	<input type="text" id="rate" name="updateRate" style="color: #000000;" onchange="rateChanged(event)"><br>
+	 <button type="button" onclick="forceRefresh()">force refresh</button> 
+</div>
+
+<iframe
+	id="cincomancia"
+    src="cincomancia/cincomancia.html"
+></iframe>
+
+<img id="gfx" src="data/creature-ui.png">
+
+<!-- 42 202 360 519 677 -->
+<div id="cardinalButtons">
+<!--<div style="z-index: 100; position: absolute; margin-left: 42px; margin-top: 592px;">
+<button type="button">↑</button>
+<button type="button">→</button>
+<button type="button">↓</button>
+<button type="button">←</button>
+</div>-->
+</div>
+
+<script src="engine.js"></script>
+
+<script>
+
+draw.setCanvas(document.getElementById('canvas'), "#383735");
+
+/*
+	to render:
+	 x player gfx
+	 x enemy gfx
+	 x treasure
+	 x parity marker
+	 x entrance
+	 x exit
+	 x walls checked for secret exit
+	 x secret exit, if found
+	 
+	FEATURE LIST:
+	 * frog timer
+	 * parity helper
+	 * tape measure
+	 * secret exit tracker
+	 
+	to do:
+	 - port to mac
+	 - fix tape measure
+	 ~ automancia
+	 	- firing a wand with refresh up into itself won't trigger the "a wand was fired" check
+	 	- similarly, if refresh hits a wand w/ 1 change and it doesn't charge up, we can eliminate save-use?
+	 	- anchor check breaks if we have an unusable artifact up
+	 	- earthquake can eliminate in more situations, but we need to sim damage fx first
+	 - save across sessions
+	 - frog v treasure algo?
+	 - enemy step forecast
+	 - track missed wand effects (+ export button)
+	 - tidy code (haha ha hahaha oh god O_O')
+	 x load/render gfx
+	 x which walls have been scouted for the secret exit?
+	 x pathing
+	 	x avoid enemies
+	 	x avoid sleeping enemies
+	 	x avoid vines
+	 	x avoid vaults
+	 x draw screen less frequently
+	 x set update rate
+	 x force update button
+	
+	automancia basic idea: calc everything we *could* find, everything on that list that we didn't find can be eliminated
+	   (except in certain cases like raio or effect priority)
+	 
+	frog v treasure algo:
+	 - can i get the key/treasure and escape w/o dancing?
+	 - if i must dance, what's my chance of escaping before the next frog?
+	 - will i get stuck?
+	
+	next up: ask the player to input a direction for the last used wand, once we have
+	that info, we should be able to mark off a LOT more cincomancia data automatically
+*/
+
+var oldE;
+
+var imgCoords = {};
+var imgNameIndex = {
+	"wizard": "char0",
+	"shrimp": "char1",
+	"ghost": "char2",
+	"lizard": "char3",
+	"frog": "char4",
+	"chicken": "char5",
+	
+	"attack": "icon-d-2",
+	"sleep": "icon-d-3",
+	"health": "icon-d-4",
+	"teleport": "icon-d-5",
+	"break wall": "icon-d-6",
+	"through walls": "icon-d-7",
+	"wrap": "icon-d-8",
+	"refresh": "icon-d-9",
+	"blood kill": "icon-d-10",
+	"explode": "icon-d-11",
+	"identify": "icon-d-12",
+	"make shrimp": "icon-d-13",
+	"make treasure": "icon-d-14",
+	"axe kill": "icon-d-15",
+	"polymorph": "icon-d-16",
+	"kill frog": "icon-d-17",
+	"kill chicken": "icon-d-18",
+	"kill shrimp": "icon-d-19",
+	"kill lizard": "icon-d-20",
+	"ghost friend": "icon-d-21",
+	"remove power": "icon-d-22",
+	"grab treasure": "icon-d-23",
+	"turn corners": "icon-d-24",
+	"warp": "icon-d-25",
+	"side hit": "icon-d-26",
+	"duplicate": "icon-d-27",
+	"instante": "icon-d-28",
+	"raio": "icon-d-29",
+	"wall hit": "icon-d-30",
+	"corner treasure": "icon-d-31",
+	"kill treasure": "icon-d-32",
+	"make wall": "icon-d-33",
+	"braco": "icon-d-34",
+	"vine": "icon-d-35",
+	"slingshot": "icon-d-36",
+	"poison": "icon-d-37",
+	"future": "icon-d-38",
+	"wall treasure": "icon-d-39",
+	"kill behind": "icon-d-40",
+	"reflect": "icon-d-41",
+	"end kill": "icon-d-42",
+	"adicional": "icon-d-43",
+	"charge": "icon-d-44",
+	"mirror": "icon-d-45",
+	"forget": "icon-d-46",
+	"move door": "icon-d-47",
+	"anchor": "icon-d-48",
+	"gem kill": "icon-d-49",
+	"double hit": "icon-d-50",
+	"earthquake": "icon-d-51",
+	
+	"swap": "icon-d-52",
+	"frog friend": "icon-d-53",
+	"reuse artifact": "icon-d-54",
+	"recharge": "icon-d-55",
+	"artifact scarecrow": "icon-d-56",
+	"anchor": "icon-d-57",
+	"contiguous hit": "icon-d-58",
+	"shrimp friend": "icon-d-59",
+	"artifact health": "icon-d-60",
+	"artifact braco": "icon-d-61",
+	"position plus": "icon-d-62",
+	"artifact book": "icon-d-63",
+	"artifact chest": "icon-d-64",
+	"artifact key": "icon-d-65",
+	"chicken friend": "icon-d-66",
+	"lizard friend": "icon-d-67",
+	"unlock": "icon-d-68",
+	"artifact order": "icon-d-69",
+	"[idk 0]": "icon-d-70",
+	"???": "icon-d-71",
+	"discard artifact": "icon-d-72",
+	"make ghost": "icon-d-73",
+	"pass through walls": "icon-d-74",
+	"final health": "icon-d-75",
+	"timido": "icon-d-76",
+	"scarecrow kill shrimp": "icon-d-77",
+	"scarecrow reflect": "icon-d-78",
+	"gem reveal": "icon-d-79",
+	"5 kill": "icon-d-80",
+	"[idk 1]": "icon-d-81",
+	
+	"key": "key0",
+	"gem": "key1",
+	"potion": "key2",
+	"book": "key3",
+	"chest": "key4",
+	
+	/* ray0 - ray13 */
+	
+	"logo": "ui0",
+	"question button": "ui1",
+	"trophy button": "ui2",
+	"zzz": "ui3",
+	"exit": "ui4",
+	"entrance": "ui5",
+	"vault wall": "ui6",
+	"closed door": "ui7",
+	"grey dot": "ui8",
+	"red dot": "ui9",
+	"green dot": "ui10",
+	"blue dot": "ui11",
+	"blood": "ui12",
+	"lightning": "ui13",
+	"explosion": "ui14",
+	"vines": "ui15",
+	"spines": "ui16",
+	"border 1": "ui17",
+	"ear button": "ui18",
+	"ear muted button": "ui19",
+	"crosshair": "ui20",
+	"poison tick": "ui21",
+	"grad hat button": "ui22",
+	"[idk] button": "ui23",
+	"[idk] button 2": "ui24",
+	"ui x": "ui25",
+	"ui box": "ui26",
+	"ui small box": "ui27",
+	"charge dot": "ui28",
+	"border 2": "ui29",
+	"border 3": "ui30",
+	"border 4": "ui31",
+	"border 5": "ui32",
+	"trapped": "ui33",
+	
+	"wand0": "wand0",
+	"wand1": "wand1",
+	"wand2": "wand2",
+	"wand3": "wand3",
+	"wand4": "wand4",
+	"wand5": "wand5",
+	"wand6": "wand6",
+	"wand7": "wand7",
+	"wand8": "wand8",
+	"wand9": "wand9",
+	
+	"haruspex": "wand10",
+	"long arm": "wand11",
+	"swap spiral": "wand13",
+	"frog statue": "wand14",
+	"scarecrow": "wand15",
+	"mushroom": "wand16",
+	"cape": "wand17",
+	"personal wand": "wand18",
+	"reuse artifact": "wand19"
+};
+
+var effectMapName = [
+	"instante", "kill chicken", "kill frog", "kill lizard", "side hit",
+	"reflect", "kill shrimp", "mirror", "ghost friend", "wall hit",
+	"raio", "kill behind", "earthquake", "blood kill", "vine",
+	"identify", "end kill", "slingshot", "axe kill", "explode",
+	"forget", "charge", "double hit", "adicional", "attack",
+	"make shrimp", "gem kill", "remove power", "sleep", "poison",
+	"duplicate", "polymorph", "future", "teleport", "warp",
+	"kill treasure", "wall treasure", "corner treasure", "make treasure", "grab treasure",
+	"turn corners", "through walls", "wrap", "refresh", "move door",
+	"make wall", "break wall", "anchor", "health", "braco"
+];
+
+var imgData = new XMLHttpRequest();
+imgData.addEventListener('load', function(e) {
+	var a = e.target.response.split("\r\n");
+	
+	for (var n=0; n<a.length; n++) {
+		a[n] = a[n].split(" ");
+		imgCoords[a[n][0]] = {
+			x: Number(a[n][2]),
+			y: Number(a[n][3]),
+			w: Number(a[n][4]),
+			h: Number(a[n][5])
+		};
+	}
+});
+imgData.open('GET', 'data/creature-ui.txt');
+imgData.send();
+
+var img = document.getElementById("gfx");
+
+function drawImage(name, x, y, w, h) {
+	var k = imgCoords[imgNameIndex[name]];
+	if (!k) return;
+	
+	draw.ctx.drawImage(img, k.x, k.y, k.w, k.h, x, y, w, h);
+}
+
+var client = new XMLHttpRequest();
+client.addEventListener('load', decode);
+
+var monkeyPath = ".monkeystate";
+
+function fileSelected(e) {
+	monkeyPath = e.target.value;
+	client.open('GET', monkeyPath);
+	client.send();
+}
+
+client.open('GET', monkeyPath);
+client.send();
+
+var updateRate = 500;
+
+document.getElementById("rate").value = 500;
+function rateChanged(e) {
+	var toRate = Number(document.getElementById("rate").value);
+	if (toRate <= 0 || toRate*0 != 0) return;
+	
+	updateRate = toRate;
+}
+
+var forced = false;
+function forceRefresh() {
+	forced = true;
+}
+
+var lastDataStr = "";
+var currentDataStr = "";
+
+var undrawn = true;
+var CHEAT = false;
+var currentGame = -1;
+
+function decode(e) {
+	if (true) {
+		setTimeout(function() {
+			client.open('GET', monkeyPath + "?=" + Math.random());
+			client.send();
+		}, updateRate);
+	}
+	
+	var data = e.target.response;
+	data = data.split(";");
+	for (var n=0; n<data.length; n++) {
+		data[n] = data[n].split(",");
+		for (var n2=0; n2<data[n].length; n2++) data[n][n2] = Number(data[n][n2]);
+	}
+
+	var changed = (cData == false) ? true : false;
+	var verbose = false;
+	for (var n=0; n<data.length; n++) {
+		if (!changed && data[n].length != cData[n].length) changed = true;
+		
+		for (var n2=0; n2<data[n].length; n2++) {
+			if (verbose && cData != false) {
+				if (n2 > cData[n].length) console.log("["+n+"]["+n2+"]: ?? -->", data[n][n2]);
+				else if (data[n][n2] != cData[n][n2]) console.log("["+n+"]["+n2+"]:", cData[n][n2], "-->", data[n][n2]);
+			}
+			
+			if (!changed && data[n][n2] != cData[n][n2]) changed = true;
+		}
+	}
+	
+	if (changed || forced) {
+		if (verbose) console.log("------------------");
+		
+		lastDataStr = currentDataStr;
+		currentDataStr = e.target.response;
+		
+		lastWandInfo = nextWandInfo;
+		oldData = cData;
+		cData = data;
+		
+		doLogic(data);
+		forced = false;
+		
+		drawEffectMap();
+	}
+	
+	if (CHEAT) {
+		CHEAT = false;
+		
+		var id = 0;
+		for (var n=131; n<131 + 19*5; n+=19) {
+			for (var n2=n; n2<n+10; n2+=2) {
+				discover(id, abil, (n2-n)/2);
+			}
+			id++;
+		}
+	}
+	
+	if (undrawn) {
+		drawGfx();
+		undrawn = false;
+	}
+}
+
+var oldData = false;
+var cData = false;
+
+var oldMap = null;
+
+var tileSize = 40;
+var margin = 2;
+
+function doLogic(data) {
+	if (currentGame != data[0][2] || data[1].length < 10) {
+		cincomancia.forceReset();
+		reset();
+		currentGame = data[0][2];
+	}
+	
+	// fill map
+	oldMap = map.copy();
+	map.clear();
+	for (var n=21; n<=50; n++) {
+		var x = ((n-21)/6)|0;
+		var y = (n-21) % 6;
+		
+		if (data[1][n] != 0) map.setWall(x, y, x, y-1, data[1][n]);
+	}
+	for (var n=51; n<=80; n++) {
+		var x = ((n-51)/5)|0;
+		var y = (n-51) % 5;
+		
+		if (data[1][n] != 0) map.setWall(x, y, x-1, y, data[1][n]);
+	}
+	
+	// get player
+	for (var n2=247; n2<247+data[1][245]*11; n2+=11) {
+		if (data[1][n2] == -1) {
+			player.x = data[1][n2+1];
+			player.y = data[1][n2+2];
+		}
+	}
+	
+	// get enemies
+	oldEnemies = enemies.copy();
+	enemies.clear();
+	for (var n2=247; n2<247+data[1][245]*11; n2+=11) {
+		if (data[1][n2] != -1) {
+			//          x              y              type         hp             sleep                 poisonedBy     poison         friend                 trapped                hasAbilities  
+			enemies.add(data[1][n2+1], data[1][n2+2], data[1][n2], data[1][n2+3], (data[1][n2+4] == 1), data[1][n2+5], data[1][n2+6], (data[1][n2+7] != 0), (data[1][n2+10] != -1), (data[1][n2+8] != -1 || data[1][n2+9] != -1));
+		}
+	}
+	
+	// get vines
+	for (var n=81; n<130; n+=2) {
+		var i = (n - 81) >> 1;
+		var x = (i/5) | 0;
+		var y = i % 5;
+		
+		vineMap[x][y] = (data[1][n] != -1) ? 1 : 0;
+	}
+	
+	// get zona
+	if (data[1][1] != zona) {
+		if (zona != -1 && zona != undefined) {
+			console.log(zona);
+			// entrance
+			var ex1 = data[1][5];
+			var ey1 = data[1][6];
+			// exit
+			var ex2 = data[1][7];
+			var ey2 = data[1][8];
+			
+			occupiedWalls = [0,0,0,0];
+			if (ey1 == -1 || ey2 == -1) occupiedWalls[0] = 1;
+			if (ex1 ==  5 || ex2 ==  5) occupiedWalls[1] = 1;
+			if (ey1 ==  5 || ey2 ==  5) occupiedWalls[2] = 1;
+			if (ex1 == -1 || ex2 == -1) occupiedWalls[3] = 1;
+		}
+		
+		zona = data[1][1];
+		wallsChecked = {};
+	}
+	
+	// get extra keys
+	keyNum = data[1][4];
+	if (keyNum == 5) {
+		for (var d in compass) {
+			var dir = compass[d];
+			if (!inBounds(player.x + dir.x, player.y + dir.y)) {
+				wallsChecked[(player.x + dir.x) + "_" + (player.y + dir.y)] = true;
+			}
+		}
+		
+		for (var n=0; n<4; n++) {
+			if (occupiedWalls[n] == 1) {
+				for (var n2=-2; n2<3; n2++) {
+					var dir = compass[n];
+					var x = (2 + dir.x*3) + n2*dir.y;
+					var y = (2 + dir.y*3) - n2*dir.x;
+					wallsChecked[x + "_" + y] = true;
+				}
+			}
+		}
+	}
+	
+	nextWandInfo = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
+	
+	var id = 0;
+	var idx = 0;
+	var str = "-----------\n";
+	
+	for (var n=131; n<131 + 19*5; n+=19) {
+		for (var n2=n+10; n2<n+19; n2++) str += data[1][n2] + ",";
+		
+		for (var n2=n; n2<n+10; n2+=2) {
+			var abil = cincoToMancia[data[1][n2]];
+			var know = data[1][n2+1];
+			
+			idx = (n2-n)/2;
+			
+			nextWandInfo[id][idx] = (know == 1) ? abil : -1;
+			
+			var cState = cincomancia.state.cells[id][abil][0];
+			str += cState;
+			
+			if (know == 1) {
+				discover(id, abil, idx);
+			} else {
+				// forget
+				if (lastWandInfo[id][idx] != -1) {
+					cincomancia.cellClicked(id, lastWandInfo[id][idx], 0);
+					forgotten[id+"_"+idx] = true;
+					console.log("forgotten at",id,idx);
+				}
+			}
+		}
+		id++;
+		str += "\n";
+	}
+	
+	turnID = rand.int();
+	abilityTests();
+	elimDecache();
+	
+	drawGfx();
+}
+
+function playerIndex(data) {
+	for (var n2=247; n2<247+data[1][245]*11; n2+=11) {
+		if (data[1][n2] == -1) return n2;
+	}
+	
+	return -1;
+}
+
+var lastWandInfo = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
+var nextWandInfo = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
+
+function reset() {
+	ruledOut = {};
+	forgotten = {};
+	
+	turnID = lastTurnID = -1;
+	discoveryStates = [];
+	elimCache = [];
+	elimDir = null;
+	elimWand = null;
+	
+	lastWandInfo = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
+	nextWandInfo = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
+}
+
+// ruleOut(used, );
+var effect = {
+	instante: 0,
+	chicken: 1,
+	frog: 2,
+	lizard: 3,
+	sideHit: 4,
+	
+	reflect: 5,
+	shrimp: 6,
+	mirror: 7,
+	ghost: 8,
+	wallHit: 9,
+	
+	stop: 10,
+	skip: 11,
+	earthquake: 12,
+	blood: 13,
+	vine: 14,
+	
+	reveal: 15,
+	endKill: 16,
+	slingshot: 17,
+	axe: 18,
+	explode: 19,
+	
+	forget: 20,
+	save: 21,
+	senha: 22,
+	adicional: 23,
+	hit: 24,
+	
+	makeShrimp: 25,
+	gemKill: 26,
+	removeAbility: 27,
+	sleep: 28,
+	poison: 29,
+	
+	dupe: 30,
+	morph: 31,
+	future: 32,
+	teleOther: 33,
+	teleSelf: 34,
+	
+	killTreasure: 35,
+	columnTreasure: 36,
+	cornerTreasure: 37,
+	noTouchTreasure: 38,
+	grab: 39,
+	
+	turn: 40,
+	pass: 41,
+	wrap: 42,
+	refresh: 43,
+	door: 44,
+	
+	makeWall: 45,
+	breakWall: 46,
+	anchor: 47,
+	health: 48,
+	braco: 49
+}
+
+function effectName(x) {
+	for (var n in effect) if (effect[n] == x) return n;
+	return "(unknown effect: "+x+")";
+}
+
+var cincoToMancia = {
+	44:  0, // x instante
+	 9:  1, // - kill chicken
+	 8:  2, // - kill frog
+	 7:  3, // - kill lizard
+	 1:  4, // x side hit
+	
+	45:  5, // - reflect
+	 5:  6, // - kill shrimp
+	28:  7, // - mirror
+	 6:  8, // - ghost friend
+	 2:  9, // x hit through wall
+	
+	43: 10, // x stop
+	12: 11, // - skip kill
+	49: 12, // o earthquake
+	14: 13, // - blood kill
+	33: 14, // x vines
+	
+	46: 15, // x reveal
+	13: 16, // - crosshair
+	11: 17, // - slingshot
+	10: 18, // - axe
+	 3: 19, // - explode
+	 
+	47: 20, // x forget
+	34: 21, // x save use
+	 4: 22, // - hit 2x
+	29: 23, // - adicional
+	 0: 24, // - hit
+	
+	15: 25, // x make shrimp
+	48: 26, // - gem kill
+	25: 27, // - remove ability
+	22: 28, // - sleep
+	26: 29, // - poison
+	
+	24: 30, // x dupe
+	23: 31, // x morph
+	27: 32, // x send to future
+	21: 33, // x teleport other
+	20: 34, // x teleport self
+	
+	39: 35, // - kill treasure
+	38: 36, // x column treasure
+	37: 37, // x corner treasure
+	36: 38, // x no touch treasure
+	35: 39, // x grab
+	
+	42: 40, // x turn corners
+	40: 41, // x through walls
+	41: 42, // x wrap
+	18: 43, // x refresh
+	32: 44, // x move door
+	
+	30: 45, // x make wall
+	31: 46, // x break wall
+	19: 47, // x anchor
+	16: 48, // x health
+	17: 49, // x braco
+};
+
+function abilityTests(dir=-1) {
+	if (oldData == false) {
+		return;
+	}
+	
+	// save charge
+	if (oldData[1][1] != cData[1][1]) {
+		var id = 0;
+		for (var n=131; n<131 + 19*5; n+=19) {
+			if (oldData[1][n + 10] > 0) {
+				var found = false;
+				for (var n2=n; n2<n+10 && !found; n2+=2) {
+					var abil = cincoToMancia[cData[1][n2]];
+					var know = cData[1][n2+1];
+					idx = (n2-n)/2;
+					
+					if (know == 1 && abil == 21) found = true; 
+				}
+				
+				if (!found) {
+					ruleOut(id, effect.save);
+				}
+			}
+			id++;
+		}
+	}
+	
+	// find which wand was used, if any
+	var used = -1, wand, slot;
+	var id = 0;
+	for (var n=131; n<131+19*5 && used==-1; n+=19) {
+		if (oldData[1][n+10] > cData[1][n+10]) used = id;
+		id++;
+	}
+	
+	if (used == -1) {
+		/*<div style="z-index: 100; position: absolute; margin-left: 42px; margin-top: 592px;">
+		<button type="button">↑</button>
+		<button type="button">→</button>
+		<button type="button">↓</button>
+		<button type="button">←</button>
+		</div>*/
+		
+		var el = document.getElementById("cardinalButtons");
+		el.innerHTML = "";
+		
+		return;
+	}
+	
+	var el = document.getElementById("cardinalButtons");
+	if (dir != -1) {
+		el.innerHTML = "";
+	} else {
+		el.innerHTML =
+			'<div style="z-index: 100; position: absolute; margin-left: ' + [42,202,360,519,677][used] + 'px; margin-top: 592px;">'
+			 + '<button type="button" onclick=abilityTests(3)>←</button>'
+			 + '<button type="button" onclick=abilityTests(0)>↑</button>'
+			 + '<button type="button" onclick=abilityTests(2)>↓</button>'
+			 + '<button type="button" onclick=abilityTests(1)>→</button>'
+			 + '</div>';
+	}
+	
+	// get player
+	var lastX, lastY;
+	for (var n=1; n<oldData.length; n++) {
+		for (var n2=247; n2<247+oldData[n][245]*11; n2+=11) {
+			if (oldData[n][n2] == -1) {
+				lastX = oldData[n][n2+1];
+				lastY = oldData[n][n2+2];
+			}
+		}
+	}
+	
+	wand = lastX;
+	slot = lastY;
+	
+	// forget & reveal, respectively
+	if (lastWandInfo[wand][slot] == nextWandInfo[wand][slot] && lastWandInfo[wand][slot] != -1) ruleOut(used, effect.forget);
+	if (lastWandInfo[wand][slot] == -1) ruleOut(used, effect.reveal);
+	
+	// instante
+	var sleepers = 0;
+	for (var n=0; n<oldEnemies.list.length; n++) if (oldEnemies.list[n].sleep) sleepers++;
+	if (oldEnemies.list.length - sleepers > 0) ruleOut(used, effect.instante);
+	
+	if (dir == -1) {
+		var val = 0;
+		var val2 = 0;
+		
+		var mCopy = oldMap.copy();
+		
+		if (mCopy.getWall(lastX, lastY, lastX, lastY - 1) == 0) {
+			val = 1;
+			val2++;
+		}
+		if (mCopy.getWall(lastX, lastY, lastX + 1, lastY) == 0) {
+			val = 2;
+			val2++;
+		}
+		if (mCopy.getWall(lastX, lastY, lastX, lastY + 1) == 0) {
+			val = 3;
+			val2++;
+		}
+		if (mCopy.getWall(lastX, lastY, lastX - 1, lastY) == 0) {
+			val = 4;
+			val2++;
+		}
+		
+		// there is only one possible direction for the wand to have fired
+		if (val2 == 1) {
+			document.getElementById("cardinalButtons").innerHTML = "";
+			
+			setTimeout(function() {
+				abilityTests(val-1);
+			}, 10);
+		}
+		
+		return;
+	}
+	
+	elimDir = dir;
+	elimWand = used;
+	
+	// carve wand path
+	// stop, wrap, pass, turn, make, break
+	
+	var hasStop = wandHas(used, effect.stop); //*
+	var hasWrap = wandHas(used, effect.wrap); //*
+	var hasPass = wandHas(used, effect.pass); //*
+	var hasTurn = wandHas(used, effect.turn); //*
+	var hasMake = wandHas(used, effect.makeWall); //*
+	var hasBreak = wandHas(used, effect.breakWall); //*
+	
+	var wPath = [vec.new(lastX, lastY)];
+	if (dir == 0) dir = vec.new(0, -1);
+	else if (dir == 1) dir = vec.new(1, 0);
+	else if (dir == 2) dir = vec.new(0, 1);
+	else if (dir == 3) dir = vec.new(-1, 0);
+	
+	var mCopy = oldMap.copy();
+	var madeWall = false;
+	
+	if (mCopy.getWall(lastX, lastY, lastX + dir.x, lastY + dir.y) == 0) {
+		mCopy.setWall(lastX, lastY, lastX + dir.x, lastY + dir.y, 1);
+		mCopy.stepTo(lastX, lastY, true);
+		
+		if (mCopy.steps[lastX + dir.x][lastY + dir.y] == -1) mCopy.setWall(lastX, lastY, lastX + dir.x, lastY + dir.y, 0);
+		else {
+			if (hasMake) {
+				// we learned nothing
+				// but made a wall
+				madeWall = true;
+			} else {
+				// we could make a wall here
+				// but make wall wasn't revealed
+				// therefore, we don't have make wall
+				mCopy.setWall(lastX, lastY, lastX + dir.x, lastY + dir.y, 0);
+				ruleOut(used, effect.makeWall);
+			}
+		}
+	}
+	
+	for (var n=0; n<25; n++) {
+		var pos = wPath[wPath.length - 1];
+		var nPos = vec.new(pos.x + dir.x, pos.y + dir.y);
+		
+		var R = rightOf(dir);
+		var L = leftOf(dir);
+		
+		// grab key :S
+		var wT = treasureAt(pos.x, pos.y, oldData);
+		if (wT == 0 && wandHas(used, effect.grab)) {
+			mCopy.unlock();
+		}
+		
+		// corner treasure
+		var wN = (mCopy.getWall(pos.x, pos.y, pos.x, pos.y-1) == 0) ? 0 : 1;
+		var wS = (mCopy.getWall(pos.x, pos.y, pos.x, pos.y+1) == 0) ? 0 : 1;
+		var wE = (mCopy.getWall(pos.x, pos.y, pos.x-1, pos.y) == 0) ? 0 : 1;
+		var wW = (mCopy.getWall(pos.x, pos.y, pos.x+1, pos.y) == 0) ? 0 : 1;
+		if (n > 0 && (wN + wS + wE + wW) == 3) {
+			if (wT == -1) ruleOut(used, effect.cornerTreasure);
+		}
+		
+		// column treasure
+		if (mCopy.getWall(pos.x, pos.y, nPos.x, nPos.y) != 0) {
+			if (inBounds(nPos.x, nPos.y) && treasureAt(nPos.x, nPos.y, oldData) == -1) {
+				if (
+					mCopy.getWall(nPos.x, nPos.y, nPos.x + R.x, nPos.y + R.y) == 0 && 
+					mCopy.getWall(nPos.x, nPos.y, nPos.x + L.x, nPos.y + L.y) == 0 && 
+					mCopy.getWall(pos.x, pos.y, pos.x + R.x, pos.y + R.y) == 0 && 
+					mCopy.getWall(pos.x, pos.y, pos.x + L.x, pos.y + L.y) == 0 && 
+					mCopy.getWall(pos.x + R.x, pos.y + R.y, nPos.x + R.x, nPos.y + R.y) == 0 && 
+					mCopy.getWall(pos.x + L.x, pos.y + L.y, nPos.x + L.x, nPos.y + L.y) == 0
+				) {
+					ruleOut(used, effect.columnTreasure);
+				}
+			}
+		}
+		
+		if (n > 0 && mCopy.getWall(pos.x, pos.y, nPos.x, nPos.y) != 0) {
+			var turned = false;
+			
+			// turn check
+			if (mCopy.getWall(pos.x, pos.y, pos.x + R.x, pos.y + R.y) != 0 && mCopy.getWall(pos.x, pos.y, pos.x + L.x, pos.y + L.y) == 0) {
+				if (hasTurn) {
+					dir = L;
+					turned = true;
+				} else {
+					ruleOut(used, effect.turn);
+				}
+			} else if (mCopy.getWall(pos.x, pos.y, pos.x + R.x, pos.y + R.y) == 0 && mCopy.getWall(pos.x, pos.y, pos.x + L.x, pos.y + L.y) != 0) {
+				if (hasTurn) {
+					dir = R;
+					turned = true;
+				} else {
+					ruleOut(used, effect.turn);
+				}
+			}
+			
+			// repeat check
+			if (turned) {
+				for (var i=1; i<wPath.length; i++) {
+					if (wPath[i-1].x == pos.x && wPath[i-1].y == pos.y) {
+						if (dir.x == wPath[i].x - wPath[i-1].x && dir.y == wPath[i].y - wPath[i-1].y) {
+							break;
+						}
+					}
+				}
+			}
+			
+			// wrap check
+			if (!turned) {
+				if (!inBounds(nPos.x, nPos.y)) {
+					// player stop
+					if (nPos.x - dir.x*5 == lastX && nPos.y - dir.y*5 == lastY) break;
+					
+					if (hasWrap) {
+						// stop check
+						if (oldEnemies.at(pos.x, pos.y) != false) {
+							if (hasStop) break;
+							else wandHas(used, effect.stop)
+						}
+						
+						nPos.x += -dir.x*5;
+						nPos.y += -dir.y*5;
+						
+						wPath.push(nPos);
+						continue;
+					} else {
+						ruleOut(used, effect.wrap);
+						break;
+					}
+				}
+			}
+			
+			// !wrapped & (turned | !turned)
+			
+			// break check
+			if (mCopy.getWall(pos.x, pos.y, nPos.x, nPos.y) == 1) {
+				if (hasBreak) mCopy.setWall(pos.x, pos.y, nPos.x, nPos.y, 0);
+				else ruleOut(used, effect.breakWall);
+			}
+			
+			if (!hasPass) {
+				// !pass & !wrapped & (turned | !turned)
+				ruleOut(used, effect.pass);
+				if (!turned) break;
+			}
+		}
+		
+		// stop check
+		if (n > 0 && oldEnemies.at(pos.x, pos.y) != false) {
+			if (hasStop) break;
+			else wandHas(used, effect.stop); // was this... supposed to be ruleOut()? who knows.
+		}
+	
+		// enemy upgrade stop check
+		if (n > 0 && oldEnemies.at(pos.x, pos.y) != false) {
+			if (enemyHasStop(oldEnemies.at(pos.x, pos.y).type, oldData)) break;
+		}
+		
+		// player check
+		if (n > 0 && nPos.x == lastX && nPos.y == lastY) {
+			break;
+		}
+		
+		if (turned) nPos = vec.new(pos.x + dir.x, pos.y + dir.y);
+		wPath.push(nPos);
+	}
+	
+	/*
+		quake - 12
+		vine - 14
+		dig treasure - 38
+		refresh - 43
+		anchor - 47
+		health - 48
+		braco - 49
+	*/
+	var enemiesTouched = 0;
+	var touchedTreasure = false;
+	
+	var teleProcced = false, treasureTeleProcced = false;
+	var mirrorProcced = [false, false, false, false, false, false, false];
+	var adProcced = 0;
+	
+	var pIdx = playerIndex(oldData);
+	
+	mCopy = oldMap.copy();
+	
+	if (madeWall) {
+		// will make wall hit an enemy on the other side of the fresh wall?
+		// [tested] nope. i could have sworn it did! weird!
+		
+		mCopy.setWall(wPath[0].x, wPath[0].y, wPath[1].x, wPath[1].y, 1);
+	}
+	
+	var skipParity = 0;
+	
+	for (var n=1; n<wPath.length; n++) {
+		var x = wPath[n].x;
+		var y = wPath[n].y;
+		var d = vec.new(x - wPath[n-1].x, y - wPath[n-1].y);
+		
+		var dF = vec.new(Math.sign(d.x), Math.sign(d.y));
+		if (Math.abs(d.x + d.y) > 1) dF = vec.new(-dF.x, -dF.y);
+		var dR = vec.new(dF.y, -dF.x);
+		var dL = vec.new(-dF.y, dF.x);
+		var dB = vec.new(-dF.x, -dF.y);
+		
+		// side hit & wall hit
+		var E = oldEnemies.at(x + dR.x, y + dR.y);
+		if (E != false && E.hp - adProcced >= 1 && !mirrorProcced[E.type]) {
+			if (oldEnemies.at(x, y) == false || wandHas(used, effect.teleOther) || wandHas(used, effect.future)) {
+				if (mCopy.getWall(x, y, x+dR.x, y+dR.y) == 0) {
+					if (wandHas(used, effect.sideHit)) E.hp = Math.max(0, E.hp - 1);
+					ruleOut(used, effect.sideHit);
+				}
+			}
+		}
+		
+		E = oldEnemies.at(x + dL.x, y + dL.y);
+		if (E != false && E.hp - adProcced >= 1 && !mirrorProcced[E.type]) {
+			if (oldEnemies.at(x, y) == false || wandHas(used, effect.teleOther) || wandHas(used, effect.future)) {
+				if (mCopy.getWall(x, y, x+dL.x, y+dL.y) == 0) {
+					if (wandHas(used, effect.sideHit)) E.hp = Math.max(0, E.hp - 1);
+					ruleOut(used, effect.sideHit);
+				}
+			}
+		}
+		
+		// wall hit
+		for (var n2 in compass) {
+			if (mCopy.getWall(x, y, x+compass[n2].x, y+compass[n2].y) != 0) {
+				var E = oldEnemies.at(x+compass[n2].x, y+compass[n2].y);
+				if (E != false && E.hp - adProcced >= 1 && !mirrorProcced[E.type]) {
+					ruleOut(used, effect.wallHit);
+					if (wandHas(used, effect.wallHit)) E.hp = Math.max(0, E.hp - 1);
+				}
+			}
+		}
+		
+		if (treasureAt(x, y, oldData) != -1) {
+			touchedTreasure = true;
+			ruleOut(used, effect.grab);
+			
+			if (wandHas(used, effect.grab)) {
+				takeTreasure(x, y, oldData);
+			} else {
+				if (!treasureTeleProcced) {
+					if (
+						(treasureAt(x + dR.x, y + dR.y, oldData) == -1 && mCopy.getWall(x, y, x + dR.x, y + dR.y) == 0) ||
+						(treasureAt(x + dL.x, y + dL.y, oldData) == -1 && mCopy.getWall(x, y, x + dL.x, y + dL.y) == 0)
+					) {
+						ruleOut(used, effect.dupe);
+					}
+				}
+				
+				ruleOut(used, effect.morph);
+				ruleOut(used, effect.future);
+				ruleOut(used, effect.teleOther);
+				
+				if (wandHas(used, effect.teleOther)) treasureTeleProcced = true;
+			}
+		}
+		
+		var hpPlayer = oldData[1][playerIndex(oldData)+3];
+		
+		var enm = oldEnemies.at(x, y);
+		if (enm != false) {
+			enemiesTouched++;
+			
+			/*
+				 - run through the wand effects, top to bottom
+				 - the only thing that can prevent a kill effect from firing is an effect above deactivating it
+				 - so we run down the line until the enemy is dead or we're done
+				 - if we have an empty slot, check conditions we can meet and rule them out
+			*/
+			
+			var i = playerIndex(oldData);
+			
+			for (var n2=0; n2<5 && enm.hp-adProcced>0; n2++) {
+				if (nextWandInfo[used][n2] >= 0) {
+					var t = nextWandInfo[used][n2];
+					if (t == effect.mirror && t != 7) mirrorProcced[enm.type] = true;
+					else if (t == effect.chicken && enm.type == 4) enm.hp = 0;
+					else if (t == effect.frog && enm.type == 3) enm.hp = 0;
+					else if (t == effect.lizard && enm.type == 2) enm.hp = 0;
+					else if (t == effect.shrimp && enm.type == 0 && hpPlayer < 5) {
+						enm.hp = 0;
+						hpPlayer++;
+					}
+					else if (t == effect.ghost && enm.type == 1 && !enm.friend) enm.friend = true;
+					else if (t == effect.skip && skipParity == 1) enm.hp = 0;
+					else if (t == effect.blood && bloodAt(x, y, oldData)) enm.hp = 0;
+					else if (t == effect.endKill && n == wPath.length-1) enm.hp = 0;
+					else if (t == effect.slingshot && enm.hp-adProcced > hpPlayer) enm.hp = 0;
+					else if (t == effect.axe && enm.hp-adProcced < [1,1,2,3,4,5,0][enm.type]) enm.hp = 0;
+					else if (t == effect.senha) enm.hp = Math.max(0, enm.hp - 2);
+					else if (t == effect.hit) enm.hp = Math.max(0, enm.hp - 1);
+					else if (t == effect.gemKill && oldData[1][3] >= 1 && enm.hp >= 2) {
+						oldData[1][3]--;
+						enm.hp = 0;
+					}
+					else if (t == effect.removeAbility) { enm.hasAbilities = false; }
+					else if (t == effect.sleep) enm.sleep = true;
+					else if (t == effect.poison && enm.poisonedBy == -1) enm.poison = enm.poisonedBy = 0;
+					else if (t == effect.earthquake && x == 2 && y == 2) {
+						for (var E in oldEnemies.list) oldEnemies.list[E].hp = Math.max(0, oldEnemies.list[E].hp - 1);
+					}
+					//else if (t == effect.future) oldEnemies.removeAt(x,y);
+					//else if (t == effect.teleOther) oldEnemies.removeAt(x,y);
+				}
+				
+				if (enm.hp-adProcced < [1,1,2,3,4,5,0][enm.type] && enm.hp-adProcced > 0) ruleOut(used, effect.axe, n2);
+			}
+			
+			if (enm.hp-adProcced > 0) {
+				if (enm.type != 7 && oldEnemies.liveCount(enm.type) >= 2) ruleOut(used, effect.mirror);
+				// to do: skip
+				if (bloodAt(x, y, oldData)) ruleOut(used, effect.blood);
+				if (enm.type == 4) ruleOut(used, effect.chicken);
+				if (enm.type == 3) ruleOut(used, effect.frog);
+				if (enm.type == 2) ruleOut(used, effect.lizard);
+				if (enm.type == 1 && !enm.friend) ruleOut(used, effect.ghost);
+				if (enm.type == 0 && hpPlayer < 5) ruleOut(used, effect.shrimp);
+				if (n == wPath.length-1) ruleOut(used, effect.endKill);
+				if (enm.hp-adProcced > hpPlayer) ruleOut(used, effect.slingshot);
+				ruleOut(used, effect.hit);
+				ruleOut(used, effect.future);
+				ruleOut(used, effect.morph);
+				ruleOut(used, effect.teleOther);
+				if (enm.hasAbilities) ruleOut(used, effect.removeAbility);
+				if (oldData[1][playerIndex(oldData)+3] >= 1 && enm.hp >= 2) {
+					console.log(">>> " + oldData[1][playerIndex(oldData)+3]);
+					console.log(">>> " + enm.hp);
+					ruleOut(used, effect.gemKill); // is this right?
+				}
+				if (enm.poisonedBy == -1) ruleOut(used, effect.poison);
+				if (!enm.sleep) ruleOut(used, effect.sleep);
+				
+				if (!teleProcced) {
+					if (
+						(oldEnemies.at(x + dR.x, y + dR.y) == false && mCopy.getWall(x, y, x + dR.x, y + dR.y) == 0) ||
+						(oldEnemies.at(x + dL.x, y + dL.y) == false && mCopy.getWall(x, y, x + dL.x, y + dL.y) == 0)
+					) {
+						console.log([oldEnemies.at(x + dR.x, y + dR.y), mCopy.getWall(x, y, x + dR.x, y + dR.y)]);
+						console.log([oldEnemies.at(x + dL.x, y + dL.y), mCopy.getWall(x, y, x + dL.x, y + dL.y)]);
+						ruleOut(used, effect.dupe);
+					}
+				}
+			} else {
+				ruleOut(used, effect.killTreasure);
+			}
+			
+			if (enm.hp-adProcced > 0) {
+				if (wandHas(used, effect.morph)) enm.type = 7;
+				if (wandHas(used, effect.future)) oldEnemies.removeAt(x ,y);
+				if (wandHas(used, effect.teleOther)) {
+					teleProcced = true;
+					oldEnemies.removeAt(x ,y);
+				}
+			}
+			
+			if (n != wPath.length-1) ruleOut(used, effect.stop);
+			
+			/*
+				bugs:
+				 - wand with stop didn't rule out endkill
+				 x future still lets you rule out poison/sleep. should... it? (yes: if future took priority over sleep/poison, they would never fire)
+				 x turn corners interacts badly with crossing the player tile
+				 x un-elim things for the forgotten square
+				 x quake doesn't elim when it should?
+				 ? elim chicken also failed?
+				 - wand with stop, tele other, tele self: can all 3 fire?
+				 ? implement fake...
+				 	? tele other
+				 	? send to future
+				 	? morph
+				 ? explosion check
+				 x some treasure kill checks
+				 - handle addicional somehow??
+				 x removeAbility check
+				 x caro check
+				 x explosion on self check
+				 x if we top out from shrimp health, we shouldn't get floor health
+				 - can you mirror kill a scarecrow?
+				 - what attacks don't fire on friends?
+				 	- adicional
+				 - update game, play for a bit, make sure everything seems to be working
+				 	x didn't elim clone when wand fired on object? might have been a desync, need to check anyway
+				 	n killing a chicken shouldn't elim dourado
+				 ~ write guide to running
+				 x account for enemies with stop powerup
+				 ? "4_47", 3, 40,0,0,17444444,67039095,1575920504,205500965,1902222,2002710391,1575942008,214358880,1,0,0,1,0,0,5,0;355645749,1,12,1,0,1,5,-1,3,-4,-4,1,2,0,21,0,-1,-1,1,0,2,1,0,1,0,0,1,1,0,1,1,0,1,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1,0,1,2,0,1,0,1,1,0,0,0,0,1,1,0,0,0,0,0,1,1,1,0,1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,1,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,45,1,42,0,4,0,39,1,44,1,0,7,208,42,240,48,176,37,223.0,12,1,23,0,17,0,16,0,33,1,1,4,216,207,212,203,87,78,294.0,14,0,1,0,26,1,45,1,17,0,1,2,143,143,225,225,146,146,5.0,37,0,5,0,46,1,31,1,34,0,1,8,242,251,178,187,116,125,76.0,6,1,19,0,11,0,29,0,8,0,1,0,65,70,213,218,254,255,147.0,8,0,26,0,40,0,33,0,30,0,0,5,178,37,119,27,228,46,355.0,5,0,-1,2,3,5,0,-1,0,0,0,0,-1,0,3,2,1,0,-1,0,0,0,0,-1,1,2,4,1,0,-1,0,0,0,0,-1,2,4,3,2,0,-1,0,0,0,0,-1,2,2,0,2,0,-1,0,0,0,0,-1,2,0,0,1,0,3,1,2,0,-1,-1,-1,0,3,2,3,3,3,2,1,3,2,;0,;0,;1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,;-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,;67,69,35,36,7,98,56,23,49,75,;0,0,2,4,9,3,0,8,1,5,7,6,;0,;205,17444444,67039095,1575920504,205500965,10164466,1635016567,1575942008,214358033,5839330,1981046647,1575942008,214357791,7804350,1914630007,1575942008,214212470,6427722,1956573047,1575942004,214358880,5574666,1908338551,1575942008,214358880,5967354,1985933175,1575942008,214358880,5705314,1983836023,1575942008,214358880,5574286,1981738871,1575942008,214358880,4853234,1996418935,1575942008,214358880,4787202,1883172727,1575942008,214358880,3936514,1996418935,1575942008,214358880,3082610,2002710391,1575942008,214358880,3017162,2002710391,1575942008,214358880,2754806,2002710391,1575942008,214358880,2754806,2002710391,1575942008,214358880,2558486,2002710391,1575942008,214358880,2295978,2002710391,1575942008,214358880,2099344,373223287,1575942008,214358880,1837278,2002710391,1575942008,214358880,1771954,1996418935,1575942008,214358880,1575086,2002710391,1575942008,214358880,1509738,2002710391,1575942008,214358880,1443938,2002710391,1575942008,214358880,1444038,2002710391,1575942008,214358880,1181702,2002710391,1575942008,214358880,1116526,2002710391,1575942008,214358880,1902222,2002710391,1575942008,214358880,1246838,2002710391,1575942008,214358880,1181134,2002710391,1575942008,214358880,1115598,2002710391,1575942008,214358880,1115454,2002710391,1575942008,214358880,1050226,2002710391,1575942008,214358880,984498,2002710391,1575942008,214358880,919154,2002710391,1575942008,214358880,853478,2002710391,1575942008,214358880,787914,2002710391,1575942008,214358880,787602,2002710391,1575942008,214358880,722230,2002710391,1575942008,214358880,656674,2002710391,1575942008,214358880,656962,2002710391,1575942008,214358880,656674,2002710391,1575942008,214358880,656862,2002710391,1575942008,214358880,592306,2002710391,1575942008,214358880,592474,2002710391,1575942008,214358880,591018,2002710391,1575942008,214358880,591430,2002710391,1575942008,214358880,525602,2002710391,1575942008,214358880,525602,2002710391,1575942008,214358880,525458,2002710391,1575942008,214358880,525338,2002710391,1575942008,214358880,525458,2002710391,1575942008,214358880,459922,2002710391,1575942008,214358880,459922,2002710391,1575942008,214358880,460214,2002710391,1575942008,214358880,460234,2002710391,1575942008,214358880,460090,2002710391,1575942008,214358880,460354,2002710391,1575942008,214358880,394386,2002710391,1575942008,214358880,329138,2002710391,1575942008,214358880,328994,2002710391,1575942008,214358880,329138,2002710391,1575942008,214358880,329138,2002710391,1575942008,214358880,263458,2002710391,1575942008,214358880,263314,2002710391,1575942008,214358880,263746,2002710391,1575942008,214358880,263458,2002710391,1575942008,214358880,263242,2002710391,1575942008,214358880,263606,2002710391,1575942008,214358880,197922,2002710391,1575942008,214358880,197926,2002710391,1575942008,214358880,197970,2002710391,1575942008,214358880,197778,2002710391,1575942008,214358880,197922,2002710391,1575942008,214358880,133266,1440673655,1575942008,214358880,132266,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132098,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132530,2002710391,1575942008,214358880,132390,2002710391,1575942008,214358880,132554,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132266,2002710391,1575942008,214358880,132270,2002710391,1575942008,214358880,132530,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132386,2002710391,1575942008,214358880,132674,2002710391,1575942008,214358880,132530,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132554,2002710391,1575942008,214358880,132386,2002710391,1575942008,214358880,132122,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66994,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66994,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1314,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1458,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1314,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1602,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880
+				 - tele other [??????] "3_33", 2, "40,0,0,17444444,67039095,1575920504,205500965,4984486,1983836023,1575942008,214358880,1,0,0,1,0,0,5,0;156285773,0,0,0,0,-1,0,4,-1,5,3,1,4,0,24,0,-1,-1,0,0,1,1,0,0,0,0,1,1,0,0,0,2,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,1,1,1,1,0,0,0,0,2,0,0,0,0,2,0,0,0,0,1,0,1,0,0,0,1,1,1,1,1,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,21,0,45,0,1,0,16,0,30,0,1,3,177,170,158,151,242,232,308.0,7,0,49,0,18,0,44,0,20,0,1,8,182,170,236,215,170,168,19.0,46,0,37,0,5,0,13,0,0,0,1,7,251,177,227,173,71,75,90.0,41,0,24,0,31,0,47,0,17,0,1,6,225,109,238,111,123,92,161.0,17,0,2,0,32,0,7,0,45,0,1,2,205,42,107,25,232,46,232.0,8,0,7,0,1,0,37,0,17,0,0,5,87,22,201,41,232,46,355.0,6,0,-1,0,0,5,0,-1,0,0,0,0,-1,0,2,4,1,0,-1,0,0,0,0,-1,0,0,4,1,0,-1,0,0,0,0,-1,1,2,2,1,0,-1,0,0,0,0,-1,2,4,1,2,0,-1,0,0,0,0,-1,2,2,3,2,0,-1,0,0,0,0,-1,2,0,0,3,1,4,1,4,0,-1,-1,-1,0,5,3,2,1,4,1,4,1,3,2,4,0,;0,;0,;1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,;-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,;63,75,31,86,27,94,48,67,35,19,;0,0,8,2,9,6,1,3,5,0,4,7,;0,;211,17444444,67039095,1575920504,205500965,10164466,1635016567,1575942008,214358033,5839330,1981046647,1575942008,214357791,7804350,1914630007,1575942008,214212470,6427722,1956573047,1575942004,214358880,5574666,1908338551,1575942008,214358880,5967354,1985933175,1575942008,214358880,5705314,1983836023,1575942008,214358880,5574286,1981738871,1575942008,214358880,4984486,1983836023,1575942008,214358880,4853234,1996418935,1575942008,214358880,4787202,1883172727,1575942008,214358880,3936514,1996418935,1575942008,214358880,3411162,2002710391,1575942008,214358880,3082610,2002710391,1575942008,214358880,3017162,2002710391,1575942008,214358880,2754806,2002710391,1575942008,214358880,2754806,2002710391,1575942008,214358880,2558486,2002710391,1575942008,214358880,2295978,2002710391,1575942008,214358880,2165098,2002710391,1575942008,214358880,2099344,373223287,1575942008,214358880,1968514,2002710391,1575942008,214358880,1837278,2002710391,1575942008,214358880,1771954,1996418935,1575942008,214358880,1575086,2002710391,1575942008,214358880,1509738,2002710391,1575942008,214358880,1443938,2002710391,1575942008,214358880,1444038,2002710391,1575942008,214358880,1181702,2002710391,1575942008,214358880,1116526,2002710391,1575942008,214358880,1902222,2002710391,1575942008,214358880,1246838,2002710391,1575942008,214358880,1181134,2002710391,1575942008,214358880,1115598,2002710391,1575942008,214358880,1115454,2002710391,1575942008,214358880,1050226,2002710391,1575942008,214358880,984498,2002710391,1575942008,214358880,919154,2002710391,1575942008,214358880,853478,2002710391,1575942008,214358880,787626,2002710391,1575942008,214358880,787914,2002710391,1575942008,214358880,787602,2002710391,1575942008,214358880,722230,2002710391,1575942008,214358880,656674,2002710391,1575942008,214358880,656962,2002710391,1575942008,214358880,656674,2002710391,1575942008,214358880,656862,2002710391,1575942008,214358880,592306,2002710391,1575942008,214358880,592474,2002710391,1575942008,214358880,591018,2002710391,1575942008,214358880,591430,2002710391,1575942008,214358880,525602,2002710391,1575942008,214358880,525602,2002710391,1575942008,214358880,525458,2002710391,1575942008,214358880,525338,2002710391,1575942008,214358880,525458,2002710391,1575942008,214358880,460066,2002710391,1575942008,214358880,459922,2002710391,1575942008,214358880,459922,2002710391,1575942008,214358880,460214,2002710391,1575942008,214358880,460234,2002710391,1575942008,214358880,460090,2002710391,1575942008,214358880,460354,2002710391,1575942008,214358880,394386,2002710391,1575942008,214358880,329138,2002710391,1575942008,214358880,328994,2002710391,1575942008,214358880,329138,2002710391,1575942008,214358880,329138,2002710391,1575942008,214358880,263458,2002710391,1575942008,214358880,263314,2002710391,1575942008,214358880,263746,2002710391,1575942008,214358880,263458,2002710391,1575942008,214358880,263242,2002710391,1575942008,214358880,263606,2002710391,1575942008,214358880,197922,2002710391,1575942008,214358880,197926,2002710391,1575942008,214358880,197970,2002710391,1575942008,214358880,197778,2002710391,1575942008,214358880,197922,2002710391,1575942008,214358880,133266,1440673655,1575942008,214358880,132266,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132098,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132530,2002710391,1575942008,214358880,132390,2002710391,1575942008,214358880,132554,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132266,2002710391,1575942008,214358880,132270,2002710391,1575942008,214358880,132530,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132386,2002710391,1575942008,214358880,132674,2002710391,1575942008,214358880,132530,2002710391,1575942008,214358880,132242,2002710391,1575942008,214358880,132554,2002710391,1575942008,214358880,132386,2002710391,1575942008,214358880,132122,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66994,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66994,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66562,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66706,2002710391,1575942008,214358880,66850,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1314,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1458,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1314,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1170,2002710391,1575942008,214358880,1602,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,1026,2002710391,1575942008,214358880,"
+				 - bad elims
+				 	? 4 (side hit)
+				 	? 34 (tele self)
+				 	? 33 (tele other)
+				 	? 43 (refresh)
+				 	? 46 (break wall)
+				 	---
+				 	? 42 (wrap)
+				 	? 48 (health)
+				 	--- fixed OoB error in checker
+				 	x 43 (refresh)
+				 	--- malformed refresh thesis
+				 	--- fixed enemies.at() returning frogs in the wall
+				 	--- fixed column treasure bug where it didn't detect columns right
+				 	--- fixed sidehit NOT TESTING FOR WALLS!?!?!? uggh
+				 	? 29 (poison)
+				 	--- fixed a group of rule-outs that wrongly escaped the "enemy is still alive" check
+				 	--- fixed bug where health didn't correctly elim
+				 	- gem kill: "4_26", 0, "40,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,5,0,0;-1726723066,2,4,0,0,2,5,5,3,-4,-4,0,0,0,19,0,-1,-1,0,0,3,1,1,0,1,0,1,1,0,1,0,0,1,0,1,1,1,0,1,1,0,0,0,0,1,1,0,0,0,0,0,1,1,1,0,1,2,0,0,0,0,0,0,0,1,1,0,0,0,0,1,0,1,0,0,0,1,0,0,1,1,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,3,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,30,1,5,0,12,0,17,0,14,0,0,3,216,44,210,43,153,33,87.0,18,0,2,1,30,1,11,0,9,0,1,0,221,224,125,128,248,251,158.0,8,0,46,1,42,1,32,1,30,1,0,2,76,20,197,40,252,51,229.0,35,0,36,0,7,1,16,1,5,0,1,7,133,125,227,219,212,204,300.0,48,0,21,1,2,1,47,1,44,1,1,9,196,197,242,243,103,104,11.0,8,0,1,0,31,0,15,0,44,0,2,4,229,46,248,49,199,41,355.0,5,0,-1,2,4,3,0,-1,0,0,0,0,-1,1,4,1,1,0,-1,0,0,0,0,-1,2,2,2,2,0,-1,0,0,0,0,-1,2,2,3,2,0,-1,0,0,0,0,-1,3,1,3,3,0,-1,0,0,0,0,-1,2,0,0,4,4,4,0,0,0,-1,-1,-1,0,5,1,2,3,4,2,2,1,2,0,;0,;0,;1,0,1,0,0,0,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,0,1,1,0,0,;-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,;68,38,56,64,0,27,50,24,87,1,;0,0,2,1,9,8,5,7,0,4,3,6,;0,;0,"
+			*/
+			
+			/*
+				TO DO:
+				 x GOOD BUG REPORTING
+				 x when surrounded by 3 walls, you don't need to ask for direction
+				 x automark entrance and exit walls for 5 keys
+				 - github
+				 - fix .monkeystate location for mac
+				 - elim chicken/frog/lizard kills when enemy is killed via caro
+				 - does cincomancia limit ? to 1 instance only? it should
+				 x fix in chrome?
+				 - forget bugs out if you discover the replacement effect?, see here: https://discord.com/channels/450508268570279936/668512953741475880/1080947501105954816
+				 - implement every other
+				 - refresh wand button
+				 - proteger elim from discord
+				 - bad elim: 1x26 gemKill localhost:8000:1486:11 Array(3) [ "1_26", 0, "40,0,0,48777504,109318568,607522296,1287456386,263338,2002710391,1575942008,1288100704,1,0,0,1,0,0,5,0,0;1684402841,0,0,0,0,-1,0,4,-1,-4,-4,4,4,0,21,0,-1,-1,1,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,1,2,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,2,1,1,1,1,1,-1,0,-1,0,-1,0,-1,8,-1,0,-1,0,-1,0,-1,2,-1,6,-1,7,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,6,0,20,0,47,0,41,0,11,0,1,7,156,161,254,255,245,250,147.0,33,0,6,0,5,0,35,0,48,0,1,8,231,225,242,236,181,175,218.0,24,1,20,1,44,1,1,1,2,0,0,2,216,44,205,42,153,33,289.0,1,0,28,0,26,0,15,0,18,0,1,0,202,202,74,74,253,253,0.0,19,0,2,0,4,0,29,0,30,0,1,1,149,158,253,255,249,255,71.0,11,0,30,0,45,0,43,0,3,0,2,9,139,31,142,31,238,47,355.0,3,0,2,1,3,2,0,-1,0,0,0,0,-1,2,2,2,2,0,-1,0,0,0,0,-1,-1,1,4,5,0,-1,0,0,0,0,-1,3,0,0,0,1,1,4,4,0,1,1,0,-1,-1,-1,0,5,1,3,1,4,2,4,3,2,4,2,4,;0,;0,;1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,;-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,;93,33,30,80,19,52,2,84,31,81,;0,0,5,4,9,0,3,2,8,6,1,7,;0,;24,48777504,109318568,607522296,1287456386,23997504,74723191,1550165240,1275695784,19604720,53759863,1564943992,1112716165,4197550,1990127479,1575942008,1288100704,3148410,1985933175,1575942008,1288100704,2755066,2002710391,1575942008,1288100704,2689130,2002710391,1575942008,1288100704,1837282,2002710391,1575942008,1288100704,1247258,2002710391,1575942008,1288100704,3540622,1992224631,1575942008,1288100704,1902194,2002710391,1575942008,1288100704,1705610,2002710391,1575942008,1288100704,984690,2002710391,1575942008,1288100704,853306,2002710391,1575942008,1288100704,787890,2002710391,1575942008,1288100704,525482,2002710391,1575942008,1288100704,460114,2002710391,1575942008,1288100704,394698,2002710391,1575942008,1288100704,328850,2002710391,1575942008,1288100704,328878,2002710391,1575942008,1288100704,263338,2002710391,1575942008,1288100704,263482,2002710391,1575942008,1288100704,1170,2002710391,1575942008,1288100704,1026,2002710391,1575942008,1288100704,"]
+				 - bad elim: 3x19 explode 40,22,2,48777504,109318568,607522296,1287456386,1444646,2002710391,1575942008,1288100704,1,3,3,1,0,0,-1,0,0;1225944945,2,14,3,3,0,-1,-1,1,-4,-4,2,3,0,22,0,-1,-1,0,0,3,1,0,0,0,1,1,1,0,0,0,0,1,0,0,0,1,2,0,1,1,0,0,0,1,1,0,0,0,1,1,1,1,1,1,1,0,1,0,0,0,0,0,1,1,0,0,1,0,1,1,1,0,1,0,0,1,1,1,1,1,-1,0,-1,0,-1,0,-1,7,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,13,1,7,0,21,1,36,1,2,0,1,4,226,220,112,106,249,243,322.0,37,0,10,0,3,1,46,1,22,1,0,8,212,43,136,30,166,35,33.0,16,1,41,1,12,0,6,1,2,0,1,5,250,255,101,110,186,195,104.0,28,1,5,1,3,0,1,0,38,0,1,1,93,93,245,245,186,186,175.0,5,0,31,0,41,1,33,0,17,0,1,9,240,231,245,236,64,55,246.0,30,0,17,0,13,0,22,0,19,0,2,3,223,45,252,50,140,31,355.0,5,0,-1,1,0,3,0,-1,0,0,0,0,-1,0,3,1,1,0,-1,0,0,0,0,-1,1,2,0,1,0,-1,0,0,0,0,-1,3,1,1,2,0,-1,0,0,0,0,-1,3,1,3,2,0,-1,0,0,0,0,-1,2,0,0,3,3,1,2,3,0,-1,-1,-1,0,3,2,1,3,2,2,1,4,;0,;0,;1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,;-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,;2,56,99,23,30,29,53,50,1,72,;0,0,7,1,5,9,0,2,8,4,6,3,;0,;26,48777504,109318568,607522296,1287456386,23997504,74723191,1550165240,1275695784,19604720,53759863,1564943992,1112716165,4197550,1990127479,1575942008,1288100704,3148410,1985933175,1575942008,1288100704,2755066,2002710391,1575942008,1288100704,2689130,2002710391,1575942008,1288100704,1837282,2002710391,1575942008,1288100704,1444646,2002710391,1575942008,1288100704,1247258,2002710391,1575942008,1288100704,3540622,1992224631,1575942008,1288100704,1902194,2002710391,1575942008,1288100704,1705610,2002710391,1575942008,1288100704,984690,2002710391,1575942008,1288100704,853306,2002710391,1575942008,1288100704,787890,2002710391,1575942008,1288100704,525482,2002710391,1575942008,1288100704,460114,2002710391,1575942008,1288100704,394698,2002710391,1575942008,1288100704,328850,2002710391,1575942008,1288100704,328878,2002710391,1575942008,1288100704,263338,2002710391,1575942008,1288100704,263482,2002710391,1575942008,1288100704,197806,2002710391,1575942008,1288100704,1170,2002710391,1575942008,1288100704,1026,2002710391,1575942008,1288100704,
+				 - door: Array(3) [ "4_44", 0, "40,0,0,48777504,109318568,607522296,1287456386,1170,2002710391,1575942008,1288100704,1,0,0,1,0,0,5,0,0;-460885944,1,7,0,5,-1,4,5,4,-4,-4,-5,-5,0,2,0,-1,-1,0,0,2,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,1,0,1,1,0,1,0,0,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,1,-1,0,-1,5,-1,2,-1,0,-1,0,-1,0,-1,0,-1,1,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,0,-1,8,39,0,28,0,4,0,3,1,27,1,1,1,233,225,104,96,255,247,300.0,8,1,33,0,15,1,45,0,49,0,0,6,114,27,172,36,240,48,11.0,42,1,10,1,44,1,0,1,32,1,0,3,203,41,249,49,138,31,82.0,44,1,16,0,38,0,8,0,5,1,0,7,218,44,200,41,117,27,153.0,21,1,47,0,20,1,41,0,18,0,1,0,249,243,207,201,167,161,224.0,0,0,44,0,1,0,2,0,30,0,2,9,136,30,227,45,229,46,355.0,1,0,-1,0,3,3,0,-1,0,0,0,0,-1,0,0,0,-1,-1,-1,0,5,4,1,1,3,2,3,1,1,2,2,;0,;1,0,0,3,;1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,;-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,-1,-1,-1,-1,-1,128,128,128,;18,76,64,41,37,35,49,85,73,82,;0,0,1,3,4,0,7,2,6,8,5,9,;0,;30,48777504,109318568,607522296,1287456386,23997504,74723191,1550165240,1275695784,19604720,53759863,1564943992,1112716165,4197550,1990127479,1575942008,1288100704,3148410,1985933175,1575942008,1288100704,2755066,2002710391,1575942008,1288100704,2689130,2002710391,1575942008,1288100704,2493986,2002710391,1575942008,1288100704,1837282,2002710391,1575942008,1288100704,1575950,1983836023,1575942008,1288100704,1247258,2002710391,1575942008,1288100704,3540622,1992224631,1575942008,1288100704,1902194,2002710391,1575942008,1288100704,1705610,2002710391,1575942008,1288100704,984690,2002710391,1575942008,1288100704,853306,2002710391,1575942008,1288100704,787890,2002710391,1575942008,1288100704,657606,2002710391,1575942008,1288100704,525482,2002710391,1575942008,1288100704,460114,2002710391,1575942008,1288100704,394698,2002710391,1575942008,1288100704,328850,2002710391,1575942008,1288100704,328878,2002710391,1575942008,1288100704,263338,2002710391,1575942008,1288100704,263482,2002710391,1575942008,1288100704,197778,2002710391,1575942008,1288100704,197806,2002710391,1575942008,1288100704,1170,2002710391,1575942008,1288100704,1170,2002710391,1575942008,1288100704,1026,2002710391,1575942008,1288100704," ]
+				 - list of elims, partial elims, non-elims
+				 - read state file for button presses
+				 - keep arrow buttons around even if the player moves
+			*/
+			
+			/*
+			mirror
+			chicken
+			frog
+			liz
+			shrimp
+			ghost
+			skip
+			blood
+			end kill
+			slingshot
+			axe
+			explode
+			senha
+			hit
+			gem kill
+			rmv ability
+			sleep
+			poison
+			*/
+		}
+		
+		// earthquake
+		if (x == 2 && y == 2) {
+			var c = 0;
+			for (var en_n in oldEnemies.list) {
+				var E = oldEnemies.list[en_n];
+				if (E.hp - adProcced <= 0) continue;
+				if (mirrorProcced[E.type]) continue;
+				if (!inBounds(E.x, E.y)) continue;
+				
+				c++;
+			}
+			
+			if (c > 0) ruleOut(used, effect.earthquake);
+		}
+		
+		if (n == wPath.length-1) {
+			for (var xa=x-1; xa<=x+1; xa++) {
+				for (var ya=y-1; ya<=y+1; ya++) {
+					var enm = oldEnemies.at(xa, ya);
+					if ((enm != false && enm.hp - adProcced > 0) ||
+						(player.x == xa && player.y == ya) ||
+						(inBounds(xa, ya) && vineMap[xa][ya] == 1)
+					) {
+						ruleOut(used, effect.explode);
+						xa = ya = 10; // break out of all loops
+					}
+				}
+			}
+			
+		}
+		
+		// vines
+		if (n > 0 && (mCopy.getWall(x, y, x, y-1) + mCopy.getWall(x, y, x, y+1) + mCopy.getWall(x, y, x-1, y) + mCopy.getWall(x, y, x+1, y)) == 0) {
+			if (oldEnemies.at(x, y) == false || wandHas(used, effect.future) || wandHas(used, effect.teleOther)) {
+				if (!teleProcced) {
+					ruleOut(used, effect.vine);
+				}
+			}
+		}
+		
+		var nx = x + dF.x;
+		var ny = y + dF.y;
+		if (!inBounds(nx, ny)) {
+			if (!(nx == oldData[1][5] && ny == oldData[1][6]) && 
+				!(nx == oldData[1][7] && ny == oldData[1][8]) 
+			) {
+				ruleOut(used, effect.door);
+			}
+			
+			if (d.y <= -1 && y == 0) { // refresh
+				if (x != used) {
+					if (oldData[1][131 + x*19 + 10] == 0 || (wandHas(x, effect.save) && oldData[1][131 + x*19 + 10] < 6)) ruleOut(used, effect.refresh);
+				} else {
+					// we have no method for detecting this
+				}
+			} else if (d.x >= 1 && x == 4 && oldData[1][16] == -1) { // braco
+				ruleOut(used, effect.braco);
+			} else if (d.y >= 1 && y == 4 && hpPlayer < 5) { // heal
+				ruleOut(used, effect.health);
+			} else if (d.x <= -1 && x == 0 && oldData[1][pIdx+10] == -1) { // anchor
+				// if another wand available
+				var wid = 0;
+				for (var n2=131; n2<131+19*5; n2+=19) {
+					if (wid != used && oldData[1][n2+10] > 0) {
+						ruleOut(used, effect.anchor);
+						break;
+					}
+					wid++;
+				}
+				
+				// if an artifact is available (breaks if artifact isn't usable)
+				/*if (oldData[1][finalIndex(oldData)] > 0) {
+					ruleOut(used, effect.anchor);
+				}*/
+			}
+		} else {
+			// break walls
+			
+			if (wandHas(used, effect.breakWall) && mCopy.getWall(x, y, x+dF.x, y+dF.y) == 1) {
+				mCopy.setWall(x, y, x+dF.x, y+dF.y, 0);
+			}
+		}
+	}
+	
+	var wx = wPath[wPath.length-1].x;
+	var wy = wPath[wPath.length-1].y;
+	
+	if (enemiesTouched == 0) {
+		if (treasureAt(wx, wy, oldData) == -1 || wandHas(used, effect.future) || wandHas(used, effect.teleOther) || wandHas(used, effect.grab)) {
+			ruleOut(used, effect.noTouchTreasure);
+		}
+	}
+	if (oldEnemies.at(wx, wy) == false || wandHas(used, effect.future) || wandHas(used, effect.teleOther)) { // tele self & make shrimp
+		ruleOut(used, effect.teleSelf);
+		ruleOut(used, effect.makeShrimp);
+	}
+	//if (touchedTreasure && !wandHas(used, effect.grab) && !wandHas(used,)) ruleOut(used, effect.morph); // polymorph/grab/future/tele-other priority?
+	
+	// draw wand path
+	for (var n=1; n<wPath.length; n++) {
+		if (Math.abs(wPath[n].x - wPath[n-1].x) + Math.abs(wPath[n].y - wPath[n-1].y) > 1) {
+			var d = vec.new(0,0);
+			if (wPath[n].x < wPath[n-1].x) d.x = -1;
+			else if (wPath[n].x > wPath[n-1].x) d.x = 1;
+			if (wPath[n].y < wPath[n-1].y) d.y = -1;
+			else if (wPath[n].y > wPath[n-1].y) d.y = 1;
+			
+			draw.line(
+				(wPath[n].x+.5)*tileSize,
+				(wPath[n].y+.5)*tileSize,
+				(wPath[n].x+.5-dir.x)*tileSize,
+				(wPath[n].y+.5-dir.y)*tileSize,
+				"#ff00ff", 3
+			);
+			draw.line(
+				(wPath[n-1].x+.5)*tileSize,
+				(wPath[n-1].y+.5)*tileSize,
+				(wPath[n-1].x+.5+dir.x)*tileSize,
+				(wPath[n-1].y+.5+dir.y)*tileSize,
+				"#ff00ff", 3
+			);
+		} else {
+			draw.line(
+				(wPath[n].x+.5)*tileSize,
+				(wPath[n].y+.5)*tileSize,
+				(wPath[n-1].x+.5)*tileSize,
+				(wPath[n-1].y+.5)*tileSize,
+				"#ff00ff", 3
+			);
+		}
+	}
+	
+	elimDecache();
+}
+
+function enemyHasStop(type, data) {
+	var games = Math.floor(data[0][2]/5);
+	for (var n=0; n<games; n++) {
+		if (data[6][n]%5 == type) {
+			if (Math.floor(data[6][n]/5) == 13) return true;
+		}
+	}
+	
+	return false;
+}
+
+function effectGroup(f) {
+	switch (f) {
+		case effect.mirror:
+		case effect.skip:
+		case effect.axe:
+		case effect.blood:
+		case effect.chicken:
+		case effect.frog:
+		case effect.endKill:
+		case effect.senha:
+		case effect.lizard:
+		case effect.shrimp:
+		case effect.slingshot:
+		case effect.earthquake:
+			return 1;
+		
+		case effect.future:
+		case effect.removeAbility:
+		case effect.gemKill:
+		case effect.morph:
+		case effect.dupe:
+		case effect.teleOther:
+		case effect.poison:
+		case effect.sleep:
+		case effect.ghost:
+			return 2;
+		
+		default:
+			return 0;
+	}
+}
+
+/*
+	 - if a wand has stop and break unrevealed, and it hits both conditions, will it reveal stop?
+	 - what about stop & break & pass?
+	 - stop at player
+	 - stop at repeat
+*/
+
+function wandHas(wand, fx, wData=null) {
+	if (wData == null) wData = nextWandInfo;
+	for (var n=0; n<wData[wand].length; n++) if (wData[wand][n] == fx) return true;
+	return false;
+}
+
+function wandHasSlot(wand, fx, wData=null) {
+	if (wData == null) wData = nextWandInfo;
+	for (var n=0; n<wData[wand].length; n++) if (wData[wand][n] == fx) return n;
+	return -1;
+}
+
+var turnID = -1, lastTurnID = -1;
+var discoveryStates = [];
+var elimCache = [];
+var elimDir = null;
+var elimWand = null;
+
+function elimDecache() {
+	if (elimCache.length == 0) return;
+	
+	if (turnID != lastTurnID) {
+		discoveryStates.push({
+			state1: lastDataStr,
+			state2: currentDataStr,
+			dir: null,
+			data: []
+		});
+	}
+	
+	var i = discoveryStates.length - 1;
+	discoveryStates[i].dir = elimDir;
+	for (var n=0; n<elimCache.length; n++) discoveryStates[i].data.push(elimCache[n]);
+	
+	lastTurnID = turnID;
+	elimCache = [];
+	elimDir = null;
+	elimWand = null;
+}
+
+function findElim(s) {
+	for (var n=0; n<discoveryStates.length; n++) {
+		var D = discoveryStates[n].data;
+		for (var n2=0; n2<D.length; n2++) {
+			if (D[n2].indexOf(s) != -1) {
+				return [s, discoveryStates[n].dir, discoveryStates[n].state1];
+			}
+		}
+	}
+	
+	return "[corresponding states not found in database]";
+}
+
+function ruleOut(w, a, slot=-1) {
+	if (cincomancia.state.cells[w][a][0] != cincomancia.RED) {
+		var i = 0;
+		while (cincomancia.state.cells[w][a][0] != cincomancia.MARK && cincomancia.state.cells[w][a][0] != cincomancia.MARK+cincomancia.TINT) {
+			cincomancia.cellClicked(w, a, 0);
+			
+			if (i++ > 10) break;
+		}
+		
+		if (slot != -1) cincomancia.slotClicked(w, slot);
+		else ruledOut[w+"_"+a] = true;
+		
+		elimCache.push(w+"_"+a+"_"+slot);
+	}
+}
+
+function discover(w, a, slot=-1) {
+	if (cincomancia.state.cells[w][a][0] == cincomancia.RED) return;
+	
+	var slot = wandHasSlot(w, a);
+	if (ruledOut[w+"_"+a] && forgotten[w+"_"+slot] == null) {
+		var outStr = "bad elim: " + w + "x" + a + " " + effectName(a);
+		alert(outStr);
+		console.log(outStr);
+		console.log(findElim(w + "_" + a));
+		
+		prompt("please copy/paste for bug report", findElim(w + "_" + a));
+	}
+	
+	var i = 0;
+	while (cincomancia.state.cells[w][a][0] != cincomancia.RED) {
+		cincomancia.cellClicked(w, a, 0);
+		if (i++ > 10) break;
+	}
+	
+	if (slot != -1) cincomancia.slotClicked(w, slot);
+}
+
+var forgotten = {};
+var ruledOut = {};
+
+var keyNum = 0;
+var wallsChecked = {};
+var occupiedWalls = [0,0,0,0];
+var zona = -1;
+
+function rightOf(v) {
+	return {x:v.y, y:-v.x};
+}
+
+function leftOf(v) {
+	return {x:-v.y, y:v.x};
+}
+
+function reverseOf(v) {
+	return {x:-v.x, y:-v.y};
+}
+
+//draw.onFrame = drawGfx;
+	
+function drawGfx() {
+	var data = cData;
+	if (!data) return;
+	
+	draw.clear();
+	
+	margin = 2;
+	for (var n=0; n<5; n++) {
+		for (var n2=0; n2<5; n2++) {
+			draw.rect(n*tileSize + margin, n2*tileSize + margin, tileSize - margin*2, tileSize - margin*2, ((n+n2)%2==0) ? "#000000" : "#222222");
+		}
+	}
+	
+	// draw walls
+	for (var x=0; x<5; x++) {
+		for (var y=0; y<5; y++) {
+			if (x < 4) {
+				var w = map.getWall(x, y, x+1, y);
+				if (w != 0) draw.line((x+1)*tileSize, y*tileSize+margin, (x+1)*tileSize, y*tileSize+tileSize-margin*2, (w == 1 ? "#ffffff" : "#9999ff"), 5);
+			}
+			
+			if (y < 4) {
+				var w = map.getWall(x, y, x, y+1);
+				if (w != 0) draw.line(x*tileSize+margin, (y+1)*tileSize, x*tileSize+tileSize-margin*2, (y+1)*tileSize, (w == 1 ? "#ffffff" : "#9999ff"), 5);
+			}
+		}
+	}
+	
+	// draw enemies
+	for (var n=0; n<enemies.list.length; n++) {
+		var E = enemies.list[n];
+		drawImage(["shrimp", "ghost", "lizard", "frog", "chicken", "scarecrow"][E.type], E.x*tileSize, E.y*tileSize, tileSize, tileSize);
+		if (E.parity()) drawImage("green dot", E.x*tileSize, E.y*tileSize, 15, 15);
+		if (E.sleep) drawImage("zzz", E.x*tileSize, E.y*tileSize, tileSize, tileSize);
+	}
+	
+	// draw treasure
+	var tIdx = 247 + data[1][245]*11 + data[1][246]*11;
+	for (var n2=tIdx+2; n2<tIdx+2+data[1][tIdx]*3; n2+=3) {
+		if (data[1][n2] != -1) {
+			var x = data[1][n2+1];
+			var y = data[1][n2+2];
+			margin = 5;
+			drawImage(["key", "gem", "potion", "book", "chest"][data[1][n2]], x*tileSize + margin, y*tileSize + margin, tileSize - margin*2, tileSize - margin*2);
+		}
+	}
+	
+	// draw vines
+	for (var x=0; x<5; x++) {
+		for (var y=0; y<5; y++) {
+			if (vineMap[x][y] == 1) {
+				drawImage("vines", x*tileSize, y*tileSize, tileSize, tileSize);
+				drawImage("spines", x*tileSize, y*tileSize, tileSize, tileSize);
+			}
+		}
+	}
+	
+	// player
+	margin = 5;
+	drawImage("wizard", player.x*tileSize, player.y*tileSize, tileSize, tileSize);
+	
+	// frog counter
+	var entranceParity = (((Math.abs(player.x - data[1][5]) + Math.abs(player.y - data[1][6])) + data[1][14]) & 1) == 1;
+	var exitParity = (((Math.abs(player.x - data[1][7]) + Math.abs(player.y - data[1][7])) + data[1][14]) & 1) == 1;
+	draw.text(10, 5*tileSize + 10, "frog in: " + data[1][14], "#ffffff", 1, 1);
+	draw.text(10, 5*tileSize + 10 + 20, "entrance parity: " + (entranceParity ? "yes" : "no"), "#ffffff", 1, 1);
+	draw.text(10, 5*tileSize + 10 + 20*2, "exit parity: " + (exitParity ? "yes" : "no"), "#ffffff", 1, 1);
+	
+	// pathing checklist
+	margin = 2;
+	var boxSize = 25;
+	var margin2 = 6;
+	var chy = 1;
+	
+	/*draw.text(tileSize*5.5 + margin, boxSize*1 + margin, "tape measure: " + tapeMeasure, "#ffffff", 1, 1);
+	
+	chy++;
+	draw.rect(tileSize*5.5 + margin, boxSize*chy + margin, boxSize-margin*2, boxSize-margin*2, "#000000");
+	if (!avoidVines) draw.rect(tileSize*5.5 + margin2, boxSize*chy + margin2, boxSize-margin2*2, boxSize-margin2*2, "#ffffff");
+	draw.text(tileSize*5.5 + margin + boxSize, boxSize*chy + margin, "through vines", "#ffffff", 1, 1);
+	
+	chy++;
+	draw.rect(tileSize*5.5 + margin, boxSize*chy + margin, boxSize-margin*2, boxSize-margin*2, "#000000");
+	if (!avoidVaults) draw.rect(tileSize*5.5 + margin2, boxSize*chy + margin2, boxSize-margin2*2, boxSize-margin2*2, "#ffffff");
+	draw.text(tileSize*5.5 + margin + boxSize, boxSize*chy + margin, "through vaults", "#ffffff", 1, 1);
+	
+	chy++;
+	draw.rect(tileSize*5.5 + margin, boxSize*chy + margin, boxSize-margin*2, boxSize-margin*2, "#000000");
+	if (pathThroughEnemies) draw.rect(tileSize*5.5 + margin2, boxSize*chy + margin2, boxSize-margin2*2, boxSize-margin2*2, "#ffffff");
+	draw.text(tileSize*5.5 + margin + boxSize, boxSize*chy + margin, "through enemies", "#ffffff", 1, 1);
+	
+	chy++;
+	draw.rect(tileSize*5.5 + margin, boxSize*chy + margin, boxSize-margin*2, boxSize-margin*2, "#000000");
+	if (dontWakeEnemies) draw.rect(tileSize*5.5 + margin2, boxSize*chy + margin2, boxSize-margin2*2, boxSize-margin2*2, "#ffffff");
+	draw.text(tileSize*5.5 + margin + boxSize, boxSize*chy + margin, "don't wake enemies", "#ffffff", 1, 1);*/
+	
+	// draw entrance and exit
+	{
+		// entrance
+		var x = data[1][5] + .5;
+		var y = data[1][6] + .5;
+		
+		if (x < 0) x += .5;
+		else if (x > 4.5) x -= .5;
+		if (y < 0) y += .5;
+		else if (y > 4.5) y -= .5;
+		
+		draw.line(x*tileSize-10, y*tileSize-10, x*tileSize+10, y*tileSize+10, "#ffffff", 5);
+		draw.line(x*tileSize-10, y*tileSize+10, x*tileSize+10, y*tileSize-10, "#ffffff", 5);
+		
+		// exit
+		x = data[1][7] + .5;
+		y = data[1][8] + .5;
+		
+		if (x < 0) x += .5;
+		else if (x > 4.5) x -= .5;
+		if (y < 0) y += .5;
+		else if (y > 4.5) y -= .5;
+		
+		draw.ring(x*tileSize, y*tileSize, 10, "#ffffff", 5);
+	}
+	
+	// draw checked walls
+	margin = 12;
+	for (var i in wallsChecked) {
+		var a = i.split("_");
+		var x = Number(a[0]);
+		var y = Number(a[1]);
+		
+		if (x < 0) x += .5;
+		else if (x > 4) x -= .5;
+		if (y < 0) y += .5;
+		else if (y > 4) y -= .5;
+		
+		drawImage("grey dot", (x+.5)*tileSize - margin*.5, (y+.5)*tileSize - margin*.5, margin, margin);
+	}
+	
+	// draw secret exit, if discovered
+	{
+		var x = data[1][9];
+		var y = data[1][10];
+		
+		if (((x == -1 || x == 5) && (y >= 0 && y < 5)) || 
+		   ((y == -1 || y == 5) && (x >= 0 && x < 5))
+		) {
+			if (wallsChecked[x+"_"+y]) {
+				x += .5;
+				y += .5;
+				
+				if (x < 0) x += .5;
+				else if (x > 4) x -= .5;
+				if (y < 0) y += .5;
+				else if (y > 4) y -= .5;
+				
+				draw.line(x*tileSize, y*tileSize-10, x*tileSize, y*tileSize+10, "#ffffff", 5);
+				draw.line(x*tileSize-10, y*tileSize, x*tileSize+10, y*tileSize, "#ffffff", 5);
+			}
+		}
+	}
+	
+	// pathing
+	if (mouse.down && inBounds(start.x, start.y)) {
+		var x = start.x;
+		var y = start.y;
+		
+		while (map.steps[x][y] != -1 && (x != mx || y != my)) {
+			var min = map.steps[x][y];
+			var nDir = false;
+			
+			var o1 = map.steps[x][y];
+			
+			for (var d in compass) {
+				var dir = compass[d];
+				if (inBounds(x+dir.x, y+dir.y)) {
+					var o2 = map.steps[x+dir.x][y+dir.y];
+					if (o2 != -1 && o2 < min && map.canMove(x, y, x+dir.x, y+dir.y)) {
+						min = o2;
+						nDir = dir;
+					}
+				}
+			}
+			
+			if (nDir != false) {
+				draw.line((x+.5)*tileSize, (y+.5)*tileSize, (x+.5+nDir.x)*tileSize, (y+.5+nDir.y)*tileSize, "#ffffff", 1);
+				
+				x += nDir.x;
+				y += nDir.y;
+			} else break;
+		}
+		
+		draw.text(mouse.x + 15, mouse.y + 15, map.steps[start.x][start.y], "#ffffff", 1, 1);
+		tapeMeasure = map.steps[start.x][start.y];
+	} else tapeMeasure = "";
+	
+	drawEffectMap();
+}
+
+drawGfx();
+
+function drawEffectMap() {
+	var x = 450;
+	var y = 20;
+	var sz = 25;
+	
+	draw.rect(x, y, sz*5, sz*5, "#8C78A0");
+	
+	for (var xa=0; xa<5; xa++) {
+		for (var ya=0; ya<5; ya++) {
+			if (nextWandInfo[xa][ya] != -1) {
+				var num = nextWandInfo[xa][ya];
+				drawImage(effectMapName[num], x + xa*sz, y + ya*sz, sz, sz);
+			}
+		}
+	}
+	
+	draw.ctx.beginPath();
+	draw.ctx.rect(draw.x + x + player.x*sz, draw.y + y + player.y*sz, sz, sz);
+	draw.ctx.strokeStyle = "#ff0000";
+	draw.ctx.lineWidth = 3;
+	draw.ctx.stroke();
+	draw.ctx.lineWidth = 1;
+}
+
+function bloodAt(x, y, data=null) {
+	if (data == null) data = cData;
+	
+	for (var n=81; n<130; n+=2) {
+		var i = (n - 81) >> 1;
+		var xa = (i/5) | 0;
+		var ya = i % 5;
+	
+		if (xa == x && ya == y && data[1][n+1] != 0) return true;
+	}
+	
+	return false;
+}
+
+function treasureAt(x, y, data=null) {
+	if (data == null) data = cData;
+	
+	var tIdx = 247 + data[1][245]*11 + data[1][246]*11;
+	for (var n2=tIdx+2; n2<tIdx+2+data[1][tIdx]*3; n2+=3) {
+		if (data[1][n2] != -1) {
+			if (x == data[1][n2+1] && y == data[1][n2+2]) return data[1][n2];
+		}
+	}
+	
+	return -1;
+}
+
+function takeTreasure(x, y, data=null, _map=null) {
+	if (data == null) data = cData;
+	if (_map == null) _map = map;
+	
+	// ["key", "gem", "potion", "book", "chest"]
+	
+	var t = treasureAt(x, y, data);
+	if (t == -1) return;
+	
+	if (t == 0) {
+		_map.unlock();
+	} else if (t == 1) {
+		data[1][3] = (data[1][3] + 1) % 5;
+	} else if (t == 2) {
+		var i = playerIndex(data);
+		data[1][i+3] = Math.min(data[1][i+3] + 1, 5);
+	} else if (t == 3) {
+		// lol
+	} else if (t == 4) {
+		// lmao
+	}
+	
+	var tIdx = 247 + data[1][245]*11 + data[1][246]*11;
+	for (var n2=tIdx+2; n2<tIdx+2+data[1][tIdx]*3; n2+=3) {
+		if (data[1][n2] != -1) {
+			if (x == data[1][n2+1] && y == data[1][n2+2]) {
+				data[1].splice(n2, 3);
+				break;
+			}
+		}
+	}
+}
+
+function finalIndex(dData) {
+	return 247 + iData[1][245]*11 + iData[1][246]*11 + 2 + iData[1][247 + iData[1][245]*11 + iData[1][246]*11]*3;
+}
+
+function leftoverValues(iData) {
+	var i = finalIndex(iData);
+	var str = "";
+	for (i; i<iData[1].length; i++) str += iData[1][i] + (i < iData[1].length-1 ? "," : "");
+	console.log(str);
+}
+
+var tapeMeasure = "";
+
+var start = {x:-1, y:-1};
+var end = {x:-1, y:-1};
+var mx = -1, my = -1;
+
+mouse.onDown = function() {
+	mx = (mouse.x / tileSize) | 0;
+	my = (mouse.y / tileSize) | 0;
+	
+	map.stepTo(mx, my);
+	
+	start.x = mx;
+	start.y = my;
+	
+	/*
+	var pathThroughEnemies = true;
+	var dontWakeEnemies = false;
+	var avoidVines = false;
+	var avoidVaults = true;
+	*/
+	
+	// pathing checklist
+	margin = 2;
+	var boxSize = 25;
+	var margin2 = 6;
+	var chy = 1;
+	
+	if (mouse.x > tileSize*5.5 && mouse.x < tileSize*5.5 + boxSize) {
+		if (mouse.y > boxSize*2 && mouse.y < boxSize*6) {
+			var iy = ((mouse.y - boxSize*2) / boxSize) | 0;
+			
+			if (iy == 0) avoidVines = !avoidVines;
+			if (iy == 1) avoidVaults = !avoidVaults;
+			if (iy == 2) pathThroughEnemies = !pathThroughEnemies;
+			if (iy == 3) dontWakeEnemies = !dontWakeEnemies;
+		}
+	}
+	
+	drawGfx();
+}
+
+var cincomancia = document.getElementById("cincomancia").contentWindow;
+
+var lmx, lmy;
+
+mouse.onMove = function() {
+	if (mouse.down) {
+		mx = (mouse.x / tileSize) | 0;
+		my = (mouse.y / tileSize) | 0;
+		
+		if (lmx != mx || lmy != my) drawGfx();
+		lmx = mx;
+		lmy = my;
+		
+		map.stepTo(mx, my);
+	}
+}
+
+mouse.onUp = function() {
+	start = {x:-1, y:-1};
+	end = {x:-1, y:-1};
+	
+	drawGfx();
+}
+
+var player = {
+	x:0, y:0
+}
+
+function inBounds(x, y) {
+	return x >= 0 && y >= 0 && x < 5 && y < 5;
+}
+
+function DataEnemies() {
+	this.list = [];
+	
+	this.copy = function() {
+		var D = new DataEnemies();
+		
+		var length = this.list.length;
+		for (var n=0; n<length; n++) {
+			var E = this.list[n];
+			D.add(E.x, E.y, E.type, E.hp, E.sleep, E.poisonedBy, E.poison, E.friend, E.trapped, E.hasAbilities);
+		}
+		
+		return D;
+	};
+	
+	this.at = function(x, y) {
+		if (!inBounds(x, y)) return false;
+		
+		for (var n=0; n<this.list.length; n++) if (this.list[n].x == x && this.list[n].y == y) return this.list[n];
+		return false;
+	};
+	
+	this.liveCount = function(t=-1) {
+		var c = 0;
+		for (var n in this.list) if (this.list[n].hp > 0 && (t == -1 || this.list[n].type == t)) c++;
+		return c;
+	}
+	
+	this.sleepAdjacent = function(x, y) {
+		for (var n=0; n<this.list.length; n++) {
+			if (this.list[n].sleep && Math.abs(this.list[n].x - x) + Math.abs(this.list[n].y - y) <= 1) {
+				return true;
+			}
+		}
+		
+		return false;
+	};
+	
+	this.clear = function() {
+		this.list = [];
+	};
+	
+	this.add = function(_x=0, _y=0, _type=0, _hp=1, _sleep=false, _poisonedBy=-1, _poison=0, _friend=false, _trapped=false, _hasAbilities=false) {
+		this.list.push({
+			x: _x,
+			y: _y,
+			type: _type,
+			hp: _hp,
+			sleep: _sleep, 
+			poisonedBy: _poisonedBy,
+			poison: _poison,
+			friend: _friend,
+			trapped: _trapped,
+			hasAbilities: _hasAbilities,
+			
+			parity: function(ix=-1, iy=-1) {
+				if (ix == -1 && iy == -1) {
+					ix = player.x;
+					iy = player.y;
+				}
+				
+				return !(((this.x + this.y)&1) == ((ix + iy)&1));
+			}
+		});
+		
+		return this.list[enemies.list.length - 1];
+	};
+	
+	this.removeAt = function(x, y) {
+		for (var n=0; n<this.list.length; n++) {
+			if (this.list[n].x == x && this.list[n].y == y) {
+				this.list.splice(n, 1);
+				return;
+			}
+		}
+	}
+}
+
+var oldEnemies;
+var enemies = new DataEnemies();
+
+var vineMap = [
+	[0,0,0,0,0],
+	[0,0,0,0,0],
+	[0,0,0,0,0],
+	[0,0,0,0,0],
+	[0,0,0,0,0]
+];
+
+/*
+- avoid enemies
+- don't wake sleeping enemies
+- avoid vines
+- avoid vaults
+*/
+
+var pathThroughEnemies = true;
+var dontWakeEnemies = false;
+var avoidVines = false;
+var avoidVaults = true;
+
+function DataMap() {
+	this.vwall = [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]];
+	this.hwall = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+	this.steps = 
+		[[-1,-1,-1,-1,-1],
+		 [-1,-1,-1,-1,-1],
+		 [-1,-1,-1,-1,-1],
+		 [-1,-1,-1,-1,-1],
+		 [-1,-1,-1,-1,-1]];
+	
+	this.clear = function() {
+		this.vwall = [[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]];
+		this.hwall = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+		this.steps = [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]];
+	};
+	
+	this.unlock = function() {
+		for (var n=0; n<4; n++) {
+			for (var n2=0; n2<5; n2++) {
+				if (this.vwall[n][n2] == 2) this.vwall[n][n2] = 0;
+			}
+		}
+		
+		for (var n=0; n<5; n++) {
+			for (var n2=0; n2<4; n2++) {
+				if (this.hwall[n][n2] == 2) this.hwall[n][n2] = 0;
+			}
+		}
+	};
+	
+	this.copy = function() {
+		var M = new DataMap();
+		
+		M.vwall = this.vwall;
+		M.hwall = this.hwall;
+		M.steps = this.steps;
+		
+		return M;
+	}
+	
+	this.setWall = function(x1, y1, x2, y2, type=1, verbose=false) {
+		if (x1 != x2 && y1 != y2) {
+			if (verbose) console.log("ERROR: cannot set wall, coords are not co-linear");
+			return;
+		}
+		
+		if (x1 == x2 && y1 == y2) {
+			if (verbose) console.log("ERROR: cannot set wall, coords are equivalent");
+			return;
+		}
+		
+		if (Math.abs(x1 - x2) >= 2 || Math.abs(y1 - y2) >= 2) {
+			if (verbose) console.log("ERROR: cannot set wall, coords are not adjacent");
+			return;
+		}
+		
+		if (x2 < x1) {
+			var temp = x2;
+			x2 = x1;
+			x1 = temp;
+		}
+		
+		if (y2 < y1) {
+			var temp = y2;
+			y2 = y1;
+			y1 = temp;
+		}
+		
+		if (x1 != x2) {
+			if (y1 < 0 || y2 >= 5 || x1 < 0 || x2 >= 5) {
+				if (verbose) console.log("ERROR: cannot set wall, coords are out of bounds " + [x1,y1,x2,y2].toString());
+				return;
+			}
+			
+			this.vwall[x1][y1] = type;
+		}
+		else {
+			if (y1 < 0 || y2 >= 5 || x1 < 0 || x2 >= 5) {
+				if (verbose) console.log("ERROR: cannot set wall, coords are out of bounds ");
+				return;
+			}
+			
+			this.hwall[x1][y1] = type;
+		}
+	};
+	
+	this.getWall = function(x1, y1, x2, y2) {
+		if (x1 != x2 && y1 != y2) return -1;
+		if (x1 == x2 && y1 == y2) return -1;
+		if (Math.abs(x1 - x2) >= 2 || Math.abs(y1 - y2) >= 2) return -1;
+		
+		if (x1 < 0 || x1 > 4 || y1 < 0 || y1 > 4) return 1;
+		if (x2 < 0 || x2 > 4 || y2 < 0 || y2 > 4) return 1;
+		
+		if (x2 < x1) {
+			var temp = x2;
+			x2 = x1;
+			x1 = temp;
+		}
+		
+		if (y2 < y1) {
+			var temp = y2;
+			y2 = y1;
+			y1 = temp;
+		}
+		
+		if (x1 != x2) {
+			return this.vwall[x1][y1];
+		} else {
+			return this.hwall[x1][y1];
+		}
+	};
+	
+	this.stepTo = function(_x, _y, wallsOnly=false) {
+		this.steps = 
+			[[-1,-1,-1,-1,-1],
+			 [-1,-1,-1,-1,-1],
+			 [-1,-1,-1,-1,-1],
+			 [-1,-1,-1,-1,-1],
+			 [-1,-1,-1,-1,-1]];
+		
+		if (_x < 0 || _x > 4 || _y < 0 || _y > 4) {
+			//console.log("cannot path, out of bounds");
+			return;
+		}
+		
+		var i = 0;
+		var open = [{x:_x, y:_y}];
+		this.steps[_x][_y] = 0;
+		
+		var limit = 25;
+		while (i < open.length) {
+			var o = open[i];
+			for (var d in compass) {
+				var dir = compass[d];
+				if (this.canMove(o.x, o.y, o.x+dir.x, o.y+dir.y, wallsOnly)) {
+					if (this.steps[o.x + dir.x][o.y + dir.y] == -1) {
+						this.steps[o.x + dir.x][o.y + dir.y] = this.steps[o.x][o.y] + 1;
+						open.push({
+							x: o.x + dir.x,
+							y: o.y + dir.y
+						});
+					}
+				}
+			}
+			
+			if (limit-- < 0) {
+				console.log("something went wrong :/");
+				break;
+			}
+			i++;
+		}
+	}
+	
+	this.canMove = function(x1, y1, x2, y2, wallsOnly=false) {
+		if (inBounds(x2, y2)) {
+			if (wallsOnly || !avoidVines || vineMap[x2][y2] == 0) {
+				if (wallsOnly || pathThroughEnemies || enemies.at(x2, y2) == false) {
+					if (wallsOnly || !dontWakeEnemies || enemies.sleepAdjacent(x2, y2) == false) {
+						var wall = this.getWall(x1, y1, x2, y2);
+						if ((avoidVaults || wallsOnly) ? (wall == 0) : (wall != 1)) {
+							return true;
+						}
+					}
+				}
+			}
+		}
+		
+		return false;
+	}
+}
+
+var map = new DataMap();
+
+/*function canMove(x1, y1, x2, y2) {
+	if (inBounds(x2, y2)) {
+		if (!avoidVines || vineMap[x2][y2] == 0) {
+			if (pathThroughEnemies || enemies.at(x2, y2) == false) {
+				if (!dontWakeEnemies || enemies.sleepAdjacent(x2, y2) == false) {
+					var wall = map.getWall(x1, y1, x2, y2);
+					if (avoidVaults ? (wall == 0) : (wall != 1)) {
+						return true;
+					}
+				}
+			}
+		}
+	}
+	
+	return false;
+}*/
+
+var compass = [{x:0, y:-1}, {x:1, y:0}, {x:0, y:1}, {x:-1, y:0}];
+
+/*
+	1,248: player x
+	1,249: player y
+*/
+
+</script>
+
+</body>
+</html>
