@@ -1,18 +1,19 @@
-## INSTALL
+## WHAT IS THIS?
 
-1) place these files into the same directory as Cinco Paus.exe
+Automanica is a companion app to Cincomancia and Cinco Paus. It seeks to automate much of the labor (though not all) of entering data into Cincomancia. In addition to this, it also:
+
+* displays the frog timer
+* displays parity with the incoming frog at both entrance and exit
+* displays enemy parity (via the presence or absence of a green dot on enemies)
+* displays which wand effect the wizard is standing on
+* if you have five keys, it will track which walls you've checked for the secret exit and the location of the secret exit if you've found it
+
+## INSTALLATION
+
+1) place index.html, engine.js and the cincomancia folder into the same directory as Cinco Paus.exe
 2) cd into the same directory as Cinco Paus.exe
 3) python -m http.server
-4) navigate to http://localhost:8000/ in firefox (other browsers also likely work, but haven't been tested)
-
-## WHAT THIS DOES
-
- • automatically enters a bunch of stuff (but not everything) into cincomancia
- • displays the frog timer
- • displays parity with the incoming frog at both entrance and exit
- • displays enemy parity (via the presence or absence of a green dot on enemies)
- • displays which wand effect the wizard is standing on
- • if you have five keys, it will track which walls you've checked for the secret exit and the location of the secret exit if you've found it
+4) navigate to http://localhost:8000/
 
 ## HOW TO USE
 
