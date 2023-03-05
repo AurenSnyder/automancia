@@ -50,7 +50,6 @@ Canvas not supported
 </canvas>
 
 <div style="z-index: 50; position: absolute; margin-left: 240px; margin-top: 180px; color: #ffffff">
-	<!--<input type="file" id="datafile" onchange="fileSelected(event)"><br>-->
 
 	<label for="rate" style="font: 14px Monospace;">update rate (ms):</label>
 	<input type="text" id="rate" name="updateRate" style="color: #000000;" onchange="rateChanged(event)"><br>
@@ -367,12 +366,6 @@ var monkeyPath = pathToCheck[0];
 
 function freshMonkeypath() {
 	return monkeyPath + "?=" + rand.letter() + rand.letter() + rand.letter() + rand.letter() + rand.letter();
-}
-
-function fileSelected(e) {
-	monkeyPath = e.target.value;
-	client.open('GET', freshMonkeypath());
-	client.send();
 }
 
 client.open('GET', freshMonkeypath());
