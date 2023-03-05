@@ -59,7 +59,7 @@ Canvas not supported
 
 <iframe
 	id="cincomancia"
-    src="cincomancia/cincomancia.html"
+	src="cincomancia/cincomancia.html"
 ></iframe>
 
 <img id="gfx" src="data/creature-ui.png">
@@ -334,14 +334,23 @@ var client = new XMLHttpRequest();
 client.addEventListener('load', decode);
 
 var monkeyPath = ".monkeystate";
+/*
+monkey alts:
+	Cinco Paus dev.app/Contents/Resources/.monkeystate
+	Cinco Paus.app/Contents/Resources/.monkeystate
+*/
+
+function freshMonkeypath() {
+	return monkeyPath + "?=" + rand.letter() + rand.letter() + rand.letter() + rand.letter() + rand.letter();
+}
 
 function fileSelected(e) {
 	monkeyPath = e.target.value;
-	client.open('GET', monkeyPath);
+	client.open('GET', freshMonkeypath());
 	client.send();
 }
 
-client.open('GET', monkeyPath);
+client.open('GET', freshMonkeypath());
 client.send();
 
 var updateRate = 500;
@@ -369,7 +378,7 @@ var currentGame = -1;
 function decode(e) {
 	if (true) {
 		setTimeout(function() {
-			client.open('GET', monkeyPath + "?=" + Math.random());
+			client.open('GET', freshMonkeypath());
 			client.send();
 		}, updateRate);
 	}
