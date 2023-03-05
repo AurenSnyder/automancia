@@ -448,6 +448,15 @@ var oldMap = null;
 var tileSize = 40;
 var margin = 2;
 
+function forceReset() {
+	cincomancia.timelines = [[], [], [], [], []];
+	cincomancia.sel = null;
+	cincomancia.state = cincomancia.newState(false);
+	cincomancia.recalc();
+}
+
+var backupString = "";
+
 function doLogic(data) {
 	if (data[1][21] == undefined) {
 		console.log("undefined data");
@@ -457,7 +466,7 @@ function doLogic(data) {
 	}
 	
 	if (currentGame != data[0][2] || data[1].length < 10) {
-		cincomancia.forceReset();
+		forceReset();
 		reset();
 		currentGame = data[0][2];
 	}
