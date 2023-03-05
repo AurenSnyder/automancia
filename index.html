@@ -384,6 +384,7 @@ function decode(e) {
 	}
 	
 	var data = e.target.response;
+	backupString = data;
 	data = data.split(";");
 	for (var n=0; n<data.length; n++) {
 		data[n] = data[n].split(",");
@@ -448,6 +449,13 @@ var tileSize = 40;
 var margin = 2;
 
 function doLogic(data) {
+	if (data[1][21] == undefined) {
+		console.log("undefined data");
+		console.log(data);
+		console.log(backupString);
+		return;
+	}
+	
 	if (currentGame != data[0][2] || data[1].length < 10) {
 		cincomancia.forceReset();
 		reset();
