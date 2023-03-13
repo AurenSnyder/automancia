@@ -303,23 +303,6 @@ var effectMapName = [
 	"make wall", "break wall", "anchor", "health", "braco"
 ];
 
-var imgData = new XMLHttpRequest();
-imgData.addEventListener('load', function(e) {
-	var a = e.target.response.split("\r\n");
-	
-	for (var n=0; n<a.length; n++) {
-		a[n] = a[n].split(" ");
-		imgCoords[a[n][0]] = {
-			x: Number(a[n][2]),
-			y: Number(a[n][3]),
-			w: Number(a[n][4]),
-			h: Number(a[n][5])
-		};
-	}
-});
-imgData.open('GET', 'data/creature-ui.txt');
-imgData.send();
-
 var img = document.getElementById("gfx");
 
 function drawImage(name, x, y, w, h) {
@@ -355,6 +338,29 @@ function dataCheck() {
 	
 	client.open('GET', freshMonkeypath());
 	client.send();
+	
+	// load other URLs
+	
+	var basePath = monkeyPath.substring(0, monkeyPath.length - ".monkeystate".length);
+	
+	document.getElementById("gfx").src = basePath + "data/creature-ui.png";
+	
+	var imgData = new XMLHttpRequest();
+	imgData.addEventListener('load', function(e) {
+		var a = e.target.response.split("\r\n");
+		
+		for (var n=0; n<a.length; n++) {
+			a[n] = a[n].split(" ");
+			imgCoords[a[n][0]] = {
+				x: Number(a[n][2]),
+				y: Number(a[n][3]),
+				w: Number(a[n][4]),
+				h: Number(a[n][5])
+			};
+		}
+	});
+	imgData.open('GET', basePath + 'data/creature-ui.txt');
+	imgData.send();
 }
 
 var pathToCheck = [
@@ -1335,13 +1341,14 @@ function abilityTests(dir=-1) {
 				 x when surrounded by 3 walls, you don't need to ask for direction
 				 x automark entrance and exit walls for 5 keys
 				 x github
+				 x fix mac gfx bug
 				 - save cincomancia across sessions
 				 x fix .monkeystate location for mac
 				 - elim chicken/frog/lizard kills when enemy is killed via caro
 				 - caro on the wrong slot
 				 		https://discord.com/channels/450508268570279936/668512953741475880/1082195944658968678
 				 		https://discord.com/channels/450508268570279936/668512953741475880/1082388673309450241
-				 - incorrect espinhas rule-out due to break wall causing the space to look valid
+				 x incorrect espinhas rule-out due to break wall causing the space to look valid
 				 x does cincomancia limit ? to 1 instance only? it should
 				 x fix in chrome?
 				 - forget bugs out if you discover the replacement effect?, see here: https://discord.com/channels/450508268570279936/668512953741475880/1080947501105954816
