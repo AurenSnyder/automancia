@@ -773,6 +773,20 @@ var cincoToMancia = {
 	17: 49, // x braco
 };
 
+function brokenAtContains(brokenAt, val) {
+	for (var n=0; n<brokenAt.length; n++) {
+		if (brokenAt[n].x1 == val.x1 && 
+			brokenAt[n].y1 == val.y1 && 
+			brokenAt[n].x2 == val.x2 && 
+			brokenAt[n].y2 == val.y2
+		) {
+			return true;
+		}
+	}
+	
+	return false;
+}
+
 function abilityTests(dir=-1) {
 	if (oldData == false) {
 		return;
@@ -935,6 +949,8 @@ function abilityTests(dir=-1) {
 		}
 	}
 	
+	var brokenAt = [];
+	
 	for (var n=0; n<25; n++) {
 		var pos = wPath[wPath.length - 1];
 		var nPos = vec.new(pos.x + dir.x, pos.y + dir.y);
@@ -1033,8 +1049,10 @@ function abilityTests(dir=-1) {
 			
 			// break check
 			if (mCopy.getWall(pos.x, pos.y, nPos.x, nPos.y) == 1) {
-				if (hasBreak) mCopy.setWall(pos.x, pos.y, nPos.x, nPos.y, 0);
-				else ruleOut(used, effect.breakWall);
+				if (hasBreak) {
+					mCopy.setWall(pos.x, pos.y, nPos.x, nPos.y, 0);
+					brokenAt.push({x1: pos.x, y1: pos.y, x2: nPos.x, y2: nPos.y});
+				} else ruleOut(used, effect.breakWall);
 			}
 			
 			if (!hasPass) {
@@ -1403,7 +1421,9 @@ function abilityTests(dir=-1) {
 		if (n > 0 && (mCopy.getWall(x, y, x, y-1) + mCopy.getWall(x, y, x, y+1) + mCopy.getWall(x, y, x-1, y) + mCopy.getWall(x, y, x+1, y)) == 0) {
 			if (oldEnemies.at(x, y) == false || wandHas(used, effect.future) || wandHas(used, effect.teleOther)) {
 				if (!teleProcced) {
-					ruleOut(used, effect.vine);
+					if (!brokenAtContains(brokenAt, {x1: x, y1: y, x2: x+dF.x, y2: y+dF.y})) {
+						ruleOut(used, effect.vine);
+					}
 				}
 			}
 		}
@@ -1444,7 +1464,7 @@ function abilityTests(dir=-1) {
 				}*/
 			}
 		} else {
-			// break walls
+			// break walls [edit: i don't think this gets a chance to fire anymore]
 			
 			if (wandHas(used, effect.breakWall) && mCopy.getWall(x, y, x+dF.x, y+dF.y) == 1) {
 				mCopy.setWall(x, y, x+dF.x, y+dF.y, 0);
